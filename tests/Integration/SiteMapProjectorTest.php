@@ -78,6 +78,11 @@ final class SiteMapProjectorTest extends TestCase
                 return $this->workTitle;
             }
 
+            public function watches(): array
+            {
+                return [];
+            }
+
             public function places(): iterable
             {
                 return $this->places;

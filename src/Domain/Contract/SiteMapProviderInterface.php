@@ -33,6 +33,19 @@ interface SiteMapProviderInterface
     public function workTitle(): ?string;
 
     /**
+     * Resource keys whose changes can move this map — table names, unless a
+     * resource declares its own #[ResourceKey].
+     *
+     * A skill that publishes an event or renames a page writes a row; this is
+     * what tells the map that the row was one of ITS rows. Returning an empty
+     * list means the map only ever changes when someone rebuilds it by hand,
+     * which for a live site is a map that quietly goes out of date.
+     *
+     * @return list<string>
+     */
+    public function watches(): array;
+
+    /**
      * The places, in the order they should appear. Parents may follow children;
      * the projector links edges once every place is known.
      *
