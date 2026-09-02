@@ -9,8 +9,8 @@ use Semitexa\Cms\Domain\Contract\SiteMapProviderInterface;
 use Semitexa\Cms\Domain\Model\Place;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
-use Semitexa\Core\Container\ContainerFactory;
 use Semitexa\Core\Discovery\ClassDiscovery;
+use Psr\Container\ContainerInterface;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Weave\Domain\Enum\NodeKind;
 use Semitexa\Weave\Domain\Model\Relation;
@@ -35,6 +35,14 @@ final class SiteMapProjector
 
     #[InjectAsReadonly]
     protected GraphStoreInterface $graph;
+
+    /**
+     * Providers are found by attribute and named at runtime, so there is no
+     * property to inject them into — this is the dynamic-dispatch seam the
+     * container exists for.
+     */
+    #[InjectAsReadonly]
+    protected ContainerInterface $container;
 
     /**
      * Project every discovered map.
@@ -67,7 +75,10 @@ final class SiteMapProjector
             return [
                 'site' => $siteRef,
                 'places' => count($places),
-                'edges' => count(array_filter($places, static fn (Place $p): bool => $p->parentRef !== null)),
+                // Every place gets an edge: to its declared parent, or to the
+                // site itself. Counting only explicit parents would report zero
+                // for a flat map and read as "nothing would be linked".
+                'edges' => count($places),
                 'stale' => $this->staleRefs($siteRef, array_keys($places)),
             ];
         }
@@ -168,15 +179,18 @@ final class SiteMapProjector
 
     private function instantiate(string $class): ?object
     {
-        try {
-            return ContainerFactory::get()->get($class);
-        } catch (\Throwable) {
-            // A provider with no dependencies need not be container-managed.
+        if (isset($this->container)) {
             try {
-                return new $class();
+                return $this->container->get($class);
             } catch (\Throwable) {
-                return null;
+                // Fall through: not every provider needs to be a service.
             }
+        }
+
+        try {
+            return new $class();
+        } catch (\Throwable) {
+            return null;
         }
     }
 }
