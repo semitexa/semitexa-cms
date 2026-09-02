@@ -23,6 +23,16 @@ interface SiteMapProviderInterface
     public function siteTitle(): string;
 
     /**
+     * The work this site belongs to — the museum, the clinic, the school.
+     *
+     * The site is not the root of anything: it hangs off the organisation the
+     * person works on, which hangs off the person. Returning null leaves the
+     * site unanchored, which is only right for an install that serves one site
+     * and nothing else.
+     */
+    public function workTitle(): ?string;
+
+    /**
      * The places, in the order they should appear. Parents may follow children;
      * the projector links edges once every place is known.
      *

@@ -57,11 +57,11 @@ final class SiteMapProjectorTest extends TestCase
     }
 
     /** @param list<Place> $places */
-    private function provider(array $places): SiteMapProviderInterface
+    private function provider(array $places, ?string $workTitle = null): SiteMapProviderInterface
     {
-        return new class ($places) implements SiteMapProviderInterface {
+        return new class ($places, $workTitle) implements SiteMapProviderInterface {
             /** @param list<Place> $places */
-            public function __construct(private array $places) {}
+            public function __construct(private array $places, private ?string $workTitle) {}
 
             public function siteRef(): string
             {
@@ -71,6 +71,11 @@ final class SiteMapProjectorTest extends TestCase
             public function siteTitle(): string
             {
                 return 'Museum';
+            }
+
+            public function workTitle(): ?string
+            {
+                return $this->workTitle;
             }
 
             public function places(): iterable
@@ -147,6 +152,44 @@ final class SiteMapProjectorTest extends TestCase
 
         self::assertSame(['regmus:page:9'], $report['stale']);
         self::assertNotNull($this->store->nodeByRef('regmus:page:9'));
+    }
+
+    #[Test]
+    public function the_site_hangs_off_the_work_the_person_already_told_the_assistant_about(): void
+    {
+        // The conversational node arrives inflected — "Чернівецького обласного
+        // музею" — and would never equal the site's own nominative title, so a
+        // title match would mint a second museum next to the first.
+        $existing = $this->store->upsertNode(
+            NodeKind::Org,
+            'Чернівецького обласного музею',
+            [],
+            'os:weaver',
+        );
+
+        $this->projector()->project(
+            $this->provider([Place::page('regmus:page:3', 'Контакти')], 'Чернівецький обласний краєзнавчий музей'),
+        );
+
+        self::assertCount(1, $this->store->nodesByKind(NodeKind::Org), 'The museum must not be duplicated.');
+
+        $neighbourhood = $this->store->neighborhood($existing->id);
+        $titles = array_map(static fn ($n): string => $n->title, $neighbourhood['neighbors'] ?? []);
+        self::assertContains('Museum', $titles, 'The site should hang off the work.');
+    }
+
+    #[Test]
+    public function an_unrelated_organisation_is_not_mistaken_for_the_work(): void
+    {
+        $this->store->upsertNode(NodeKind::Org, 'Львівська політехніка', [], 'os:weaver');
+
+        $this->projector()->project(
+            $this->provider([Place::page('regmus:page:3', 'Контакти')], 'Чернівецький обласний краєзнавчий музей'),
+        );
+
+        // Two organisations now: the unrelated one, and the museum this map
+        // created because nothing matched it.
+        self::assertCount(2, $this->store->nodesByKind(NodeKind::Org));
     }
 
     #[Test]

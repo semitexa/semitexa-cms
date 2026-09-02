@@ -41,7 +41,22 @@ final class CmsMapBuildCommand extends BaseCommand
         $dryRun = (bool) $input->getOption('dry-run');
         $reports = $this->projector->projectAll($dryRun);
 
+        $skipped = $this->projector->skippedTenants();
+
         if ($reports === []) {
+            if ($skipped !== []) {
+                // The likeliest mistake by far: running the build with no
+                // tenant context and wondering why the console shows nothing.
+                $output->writeln(sprintf(
+                    '<comment>Nothing built here (tenant: %s). Maps are declared for: %s — run e.g. `tenant:run %s cms:map:build`.</comment>',
+                    $this->projector->currentTenantId(),
+                    implode(', ', $skipped),
+                    $skipped[0],
+                ));
+
+                return Command::SUCCESS;
+            }
+
             $output->writeln('<comment>No site map declared. A module describes its own map with #[AsSiteMap].</comment>');
 
             return Command::SUCCESS;
@@ -64,6 +79,13 @@ final class CmsMapBuildCommand extends BaseCommand
                     implode(', ', $report['stale']),
                 ));
             }
+        }
+
+        if ($skipped !== []) {
+            $output->writeln(sprintf(
+                '<comment>Skipped map(s) belonging to: %s. Build each in its own tenant.</comment>',
+                implode(', ', $skipped),
+            ));
         }
 
         return Command::SUCCESS;
