@@ -26,6 +26,11 @@ use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
     key: 'cms.translate',
     cronExpression: '*/5 * * * *',
     overlapPolicy: 'skip',
+    // Per tenant, because the queue is: each site's rows are only visible from
+    // inside its own context. A global run would drain the default tenant, find
+    // nothing, report success, and leave every site's translations pending —
+    // the worst shape of failure, because it looks like it works.
+    tenantMode: 'per_tenant',
 )]
 final class ContentTranslateJob implements ScheduledJobInterface
 {
