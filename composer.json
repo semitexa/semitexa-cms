@@ -12,6 +12,10 @@
     "require": {
         "php": "^8.4",
         "semitexa/core": "*",
+        "semitexa/llm": "*",
+        "semitexa/authorization": "*",
+        "semitexa/orm": "*",
+        "semitexa/os": "*",
         "semitexa/weave": "*"
     },
     "require-dev": {
@@ -33,5 +37,11 @@
             "description": "Site map: places, their editors, and the projection into the graph"
         }
     },
-    "keywords": ["semitexa", "cms", "content", "graph", "site-map"]
+    "keywords": [
+        "semitexa",
+        "cms",
+        "content",
+        "graph",
+        "site-map"
+    ]
 }
