@@ -6,6 +6,7 @@ namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
+use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Core\Attribute\AsService;
 
 /**
@@ -77,6 +78,76 @@ final class ContentEditorPage
     {$fields}
     <div class="actions"><button type="submit">Зберегти</button></div>
   </form>
+</body></html>
+HTML;
+    }
+
+    /**
+     * The list behind a collection.
+     *
+     * A row is a link to its own editor and nothing else — no inline editing,
+     * no bulk actions. A grid whose rows are half-editable is a grid where it
+     * is never clear which half you are in.
+     */
+    public function renderRows(ContentRows $rows, string $ref): string
+    {
+        $title = $this->escape($rows->title);
+        $count = $rows->total;
+
+        $items = '';
+        foreach ($rows->rows as $row) {
+            $meta = $row->meta === [] ? '' : '<span class="meta">' . $this->escape(implode(' · ', $row->meta)) . '</span>';
+            $items .= '<a class="row" href="/os/app/cms?ref=' . rawurlencode($row->ref) . '">'
+                . '<span class="row__title">' . $this->escape($row->title !== '' ? $row->title : 'Без назви') . '</span>'
+                . $meta . '</a>';
+        }
+
+        if ($items === '') {
+            $items = '<p class="empty">Тут поки порожньо.</p>';
+        }
+
+        $pager = '';
+        if ($rows->pages() > 1) {
+            $base = '/os/app/cms?ref=' . rawurlencode($ref) . '&page=';
+            $prev = $rows->hasPrevious()
+                ? '<a class="page" href="' . $base . ($rows->page - 1) . '">← Назад</a>'
+                : '<span class="page page--off">← Назад</span>';
+            $next = $rows->hasNext()
+                ? '<a class="page" href="' . $base . ($rows->page + 1) . '">Далі →</a>'
+                : '<span class="page page--off">Далі →</span>';
+            $pager = '<div class="pager">' . $prev
+                . '<span class="page-of">' . $rows->page . ' / ' . $rows->pages() . '</span>' . $next . '</div>';
+        }
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{$title}</title>
+<style>
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);
+       display:flex;flex-direction:column}
+  .bar{display:flex;align-items:baseline;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(var(--line-rgb),.18)}
+  .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong)}
+  .bar .count{font-size:12px;color:var(--dim)}
+  .list{flex:1;overflow:auto;padding:6px 0}
+  .row{display:flex;flex-direction:column;gap:3px;padding:11px 16px;text-decoration:none;color:inherit;
+       border-bottom:1px solid rgba(var(--line-rgb),.10)}
+  .row:hover{background:rgba(var(--line-rgb),.08)}
+  .row__title{font-size:14px;color:var(--strong)}
+  .meta{font-size:11px;color:var(--dim)}
+  .empty{padding:24px 16px;font-size:13px;color:var(--dim)}
+  .pager{display:flex;align-items:center;gap:14px;padding:10px 16px;border-top:1px solid rgba(var(--line-rgb),.18);font-size:12px}
+  .page{color:var(--accent);text-decoration:none}
+  .page--off{color:var(--dim)}
+  .page-of{margin-left:auto;color:var(--dim)}
+  :root{color-scheme:dark;--bg:#0f172a;--text:#dbe7ff;--strong:#eaf2ff;--dim:#6f7d99;
+    --line-rgb:148,163,184;--accent:#37b7ff}
+</style></head>
+<body>
+  <div class="bar"><h1>{$title}</h1><span class="count">{$count}</span></div>
+  <div class="list">{$items}</div>
+  {$pager}
 </body></html>
 HTML;
     }

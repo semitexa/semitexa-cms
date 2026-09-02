@@ -6,7 +6,7 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
-use Semitexa\Cms\Application\Service\ContentEditorRegistry;
+use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -35,7 +35,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
     protected GraphStoreInterface $graph;
 
     #[InjectAsReadonly]
-    protected ContentEditorRegistry $editors;
+    protected ContentSurfaceRegistry $surfaces;
 
     #[InjectAsReadonly]
     protected ContentEditorPage $page;
@@ -45,7 +45,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $ref = trim($payload->getRef());
         $node = $ref === '' ? null : $this->graph->nodeByRef($ref);
         $editorId = is_string($node?->properties['editor'] ?? null) ? (string) $node->properties['editor'] : '';
-        $editor = $editorId === '' ? null : $this->editors->find($editorId);
+        $editor = $editorId === '' ? $this->editorForRef($ref) : $this->surfaces->editor($editorId);
 
         if ($editor === null) {
             return $this->html($resource, $this->page->renderMissing($ref));
@@ -75,6 +75,26 @@ final class ContentSaveHandler implements TypedHandlerInterface
             $error === null ? 'Збережено.' : null,
             $error,
         ));
+    }
+
+    /**
+     * Rows of a collection have no node on the map, so the editors themselves
+     * say which of them owns the ref — each is tenant-scoped and only loads what
+     * it recognises.
+     */
+    private function editorForRef(string $ref): ?\Semitexa\Cms\Domain\Contract\ContentEditorInterface
+    {
+        if ($ref === '') {
+            return null;
+        }
+
+        foreach ($this->surfaces->editors() as $editor) {
+            if ($editor->load($ref) !== null) {
+                return $editor;
+            }
+        }
+
+        return null;
     }
 
     private function html(ResourceResponse $resource, string $html): ResourceResponse
