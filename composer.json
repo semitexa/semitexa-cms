@@ -1,0 +1,37 @@
+{
+    "name": "semitexa/cms",
+    "description": "Semitexa CMS — a site as a map of places: pages that open an editor, collections that open a grid",
+    "type": "semitexa-module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Semitexa",
+            "email": "support@semitexa.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "semitexa/core": "*",
+        "semitexa/weave": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Semitexa\\Cms\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Semitexa\\Cms\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "semitexa-module": {
+            "name": "cms",
+            "description": "Site map: places, their editors, and the projection into the graph"
+        }
+    },
+    "keywords": ["semitexa", "cms", "content", "graph", "site-map"]
+}
