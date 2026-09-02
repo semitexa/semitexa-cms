@@ -7,6 +7,7 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
+use Semitexa\Cms\Application\Service\TranslationQueue;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -40,6 +41,9 @@ final class ContentSaveHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected ContentEditorPage $page;
 
+    #[InjectAsReadonly]
+    protected TranslationQueue $translations;
+
     public function handle(ContentSavePayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
@@ -54,6 +58,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $error = null;
         try {
             $editor->save($ref, $payload->submittedValues());
+            $this->queueTranslation($ref, $editor->editorId());
         } catch (\InvalidArgumentException $e) {
             $error = $e->getMessage();
         } catch (\Throwable) {
@@ -95,6 +100,31 @@ final class ContentSaveHandler implements TypedHandlerInterface
         }
 
         return null;
+    }
+
+    /**
+     * Park the record for translation instead of translating here.
+     *
+     * People edit in bursts — save, reread, fix a word — and a model call on
+     * every save would spend ten of them on one paragraph and make each save
+     * wait seconds for the answer. The queue's window collapses that into one
+     * translation of the text they actually settled on.
+     */
+    private function queueTranslation(string $ref, string $editorId): void
+    {
+        if (!isset($this->translations)) {
+            return;
+        }
+
+        $translator = $this->surfaces->translator($editorId);
+        if ($translator === null) {
+            return; // this module keeps no other languages
+        }
+
+        $hash = $translator->fingerprint($ref);
+        if ($hash !== null) {
+            $this->translations->enqueue($ref, $editorId, $hash);
+        }
     }
 
     private function html(ResourceResponse $resource, string $html): ResourceResponse

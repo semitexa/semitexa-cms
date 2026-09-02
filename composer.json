@@ -15,6 +15,7 @@
         "semitexa/llm": "*",
         "semitexa/authorization": "*",
         "semitexa/orm": "*",
+        "semitexa/scheduler": "*",
         "semitexa/os": "*",
         "semitexa/weave": "*"
     },
