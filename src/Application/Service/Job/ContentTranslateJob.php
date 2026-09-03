@@ -24,7 +24,9 @@ use Semitexa\Scheduler\Domain\Model\ScheduledJobContext;
 #[AsService]
 #[AsScheduledJob(
     key: 'cms.translate',
-    cronExpression: '*/5 * * * *',
+    // Five minutes suits a museum whose admins edit a page at a time; a site
+    // with a busy newsroom will want it rarer, so the install decides.
+    cronExpression: 'env::CMS_TRANSLATE_CRON::*/5 * * * *',
     overlapPolicy: 'skip',
     // Per tenant, because the queue is: each site's rows are only visible from
     // inside its own context. A global run would drain the default tenant, find
