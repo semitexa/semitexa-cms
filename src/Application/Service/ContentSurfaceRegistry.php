@@ -7,8 +7,10 @@ namespace Semitexa\Cms\Application\Service;
 use Psr\Container\ContainerInterface;
 use Semitexa\Cms\Attribute\AsContentCollection;
 use Semitexa\Cms\Attribute\AsContentEditor;
+use Semitexa\Cms\Attribute\AsContentTranslator;
 use Semitexa\Cms\Domain\Contract\ContentCollectionInterface;
 use Semitexa\Cms\Domain\Contract\ContentEditorInterface;
+use Semitexa\Cms\Domain\Contract\ContentTranslatorInterface;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Discovery\ClassDiscovery;
@@ -75,6 +77,24 @@ final class ContentSurfaceRegistry
         foreach ($this->discover(AsContentCollection::class, ContentCollectionInterface::class) as $collection) {
             if ($collection->sourceId() === $sourceId) {
                 return $collection;
+            }
+        }
+
+        return null;
+    }
+
+    /** The translator that keeps this kind of record's languages in step. */
+    public function translator(string $translatorId): ?ContentTranslatorInterface
+    {
+        $translatorId = trim($translatorId);
+        if ($translatorId === '') {
+            return null;
+        }
+
+        /** @var ContentTranslatorInterface $translator */
+        foreach ($this->discover(AsContentTranslator::class, ContentTranslatorInterface::class) as $translator) {
+            if ($translator->translatorId() === $translatorId) {
+                return $translator;
             }
         }
 
