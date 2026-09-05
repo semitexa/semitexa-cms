@@ -94,20 +94,61 @@ final class ContentHtmlSanitizerTest extends TestCase
         yield 'base tag' => ['<base href="https://evil.test/">', 'base'];
     }
 
-    /**
-     * Trix can produce attachments, but nothing here wires an upload path — so
-     * accepting them would mean storing whatever URL a client chose to send.
-     * When attachments are built this expectation changes on purpose.
-     */
+    /** An uploaded image, addressed the only way stored markup may address one. */
     #[Test]
-    public function an_attachment_is_not_accepted_while_no_upload_path_exists(): void
+    public function an_image_on_our_own_media_route_is_kept(): void
     {
         $out = $this->sanitizer->sanitize(
-            '<figure data-trix-attachment="{}"><img src="https://evil.test/p.png"><figcaption>c</figcaption></figure>',
+            '<figure><img src="/os/app/cms/media/01J8ABC-xyz" alt="Музей" width="800" height="600"><figcaption>Підпис</figcaption></figure>',
         );
 
+        self::assertStringContainsString('src="/os/app/cms/media/01J8ABC-xyz"', $out);
+        self::assertStringContainsString('alt="Музей"', $out);
+        self::assertStringContainsString('<figcaption>Підпис</figcaption>', $out);
+    }
+
+    /**
+     * An image pointing anywhere else does not belong in an article: a tracking
+     * pixel, a request that leaves with the reader's address, or simply a
+     * picture that vanishes when somebody else's server does.
+     *
+     * The evasions matter as much as the plain case — a prefix match would let
+     * the traversal through, a suffix match the foreign host.
+     */
+    #[Test]
+    #[DataProvider('foreignImageSources')]
+    public function an_image_pointing_elsewhere_is_dropped(string $src): void
+    {
+        $out = $this->sanitizer->sanitize('<div><img src="' . $src . '" alt="x"></div>');
+
         self::assertStringNotContainsString('<img', $out);
-        self::assertStringNotContainsString('evil.test', $out);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function foreignImageSources(): iterable
+    {
+        yield 'foreign host' => ['https://evil.test/pixel.png'];
+        yield 'protocol relative' => ['//evil.test/p.png'];
+        yield 'path traversal' => ['/os/app/cms/media/../../../etc/passwd'];
+        yield 'our path as a suffix' => ['https://evil.test/os/app/cms/media/x'];
+        yield 'data uri' => ['data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg=='];
+    }
+
+    /** No src at all is not an image, whatever else it carries. */
+    #[Test]
+    public function an_image_without_a_source_is_dropped(): void
+    {
+        self::assertStringNotContainsString('<img', $this->sanitizer->sanitize('<div><img alt="x"></div>'));
+    }
+
+    /** A valid src does not buy the rest of the tag any leniency. */
+    #[Test]
+    public function an_event_attribute_does_not_survive_on_a_valid_image(): void
+    {
+        $out = $this->sanitizer->sanitize('<div><img src="/os/app/cms/media/abc" onerror="alert(1)"></div>');
+
+        self::assertStringContainsString('src="/os/app/cms/media/abc"', $out);
+        self::assertStringNotContainsString('onerror', $out);
     }
 
     /** Only declared markup fields are touched; plain text keeps its characters. */

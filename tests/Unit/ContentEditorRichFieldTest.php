@@ -71,6 +71,12 @@ final class ContentEditorRichFieldTest extends TestCase
         $with = $this->render([ContentField::html('body', 'Текст', '')]);
         self::assertStringContainsString('/assets/cms/vendor/trix/trix.css', $with);
         self::assertStringContainsString('/assets/cms/vendor/trix/trix.umd.min.js', $with);
+        // Ours, and loaded after the bundle it binds listeners onto.
+        self::assertStringContainsString('/assets/cms/js/content-editor.js', $with);
+        self::assertLessThan(
+            strpos($with, '/assets/cms/js/content-editor.js'),
+            strpos($with, '/assets/cms/vendor/trix/trix.umd.min.js'),
+        );
     }
 
     /**

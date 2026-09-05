@@ -246,10 +246,15 @@ HTML;
 </style>
 CSS;
 
+        // Ours, loaded after the editor: it only binds trix-* listeners, and
+        // those fire on events the bundle dispatches.
+        $wiring = $this->escape(AssetManager::getUrl('js/content-editor.js', 'cms'));
+
         return $meta
             . '<link rel="stylesheet" href="' . $css . '">' . "\n"
             . $skin . "\n"
-            . '<script src="' . $js . '" defer' . ScriptNonceSource::attribute() . '></script>';
+            . '<script src="' . $js . '" defer' . ScriptNonceSource::attribute() . '></script>' . "\n"
+            . '<script src="' . $wiring . '" defer' . ScriptNonceSource::attribute() . '></script>';
     }
 
     private function escape(string $value): string
