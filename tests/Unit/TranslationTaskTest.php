@@ -6,19 +6,21 @@ namespace Semitexa\Cms\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Semitexa\Cms\Application\Db\MySQL\Model\TranslationTaskResource;
+use Semitexa\Cms\Domain\Model\TranslationTask;
 
 /**
  * The copy-with helper carries the three fields that must be settable to NULL —
- * settling clears `due_at`, a fresh edit clears `last_error`. A `??` fallback
- * would silently keep the old value and leave a settled row looking due
- * forever.
+ * settling clears the deadline, a fresh edit clears the error. A `??` fallback
+ * would silently keep the old value and leave a settled row looking due forever.
+ *
+ * On the business model, not the row: the rule is about what the queue means by
+ * settled, which is the package's decision rather than a column's.
  */
 final class TranslationTaskTest extends TestCase
 {
-    private function task(): TranslationTaskResource
+    private function task(): TranslationTask
     {
-        return new TranslationTaskResource(
+        return new TranslationTask(
             id: 'task-1',
             tenantId: 'regmus',
             ref: 'regmus:page:3',
@@ -38,10 +40,10 @@ final class TranslationTaskTest extends TestCase
     {
         $settled = $this->task()->with(['translatedHash' => 'aaa', 'dueAt' => null, 'lastError' => null, 'attempts' => 0]);
 
-        self::assertNull($settled->dueAt, 'A settled row must owe nothing.');
-        self::assertNull($settled->lastError);
-        self::assertSame('aaa', $settled->translatedHash);
-        self::assertSame(0, $settled->attempts);
+        self::assertNull($settled->getDueAt(), 'A settled row must owe nothing.');
+        self::assertNull($settled->getLastError());
+        self::assertSame('aaa', $settled->getTranslatedHash());
+        self::assertSame(0, $settled->getAttempts());
     }
 
     #[Test]
@@ -49,10 +51,10 @@ final class TranslationTaskTest extends TestCase
     {
         $updated = $this->task()->with(['sourceHash' => 'bbb']);
 
-        self::assertSame('task-1', $updated->id);
-        self::assertSame('regmus:page:3', $updated->ref);
-        self::assertSame('regmus', $updated->tenantId);
-        self::assertEquals(new \DateTimeImmutable('2026-09-01 10:00:00'), $updated->createdAt);
+        self::assertSame('task-1', $updated->getId());
+        self::assertSame('regmus:page:3', $updated->getRef());
+        self::assertSame('regmus', $updated->getTenantId());
+        self::assertEquals(new \DateTimeImmutable('2026-09-01 10:00:00'), $updated->getCreatedAt());
     }
 
     #[Test]
@@ -60,9 +62,20 @@ final class TranslationTaskTest extends TestCase
     {
         $updated = $this->task()->with(['attempts' => 3]);
 
-        self::assertSame('aaa', $updated->sourceHash);
-        self::assertSame('provider timed out', $updated->lastError);
-        self::assertEquals(new \DateTimeImmutable('2026-09-02 15:00:00'), $updated->dueAt);
+        self::assertSame('aaa', $updated->getSourceHash());
+        self::assertSame('provider timed out', $updated->getLastError());
+        self::assertEquals(new \DateTimeImmutable('2026-09-02 15:00:00'), $updated->getDueAt());
+    }
+
+    #[Test]
+    public function a_task_knows_whether_its_text_is_the_translated_one(): void
+    {
+        self::assertFalse($this->task()->isSettled(), 'never translated is not settled');
+        self::assertTrue($this->task()->with(['translatedHash' => 'aaa'])->isSettled());
+        self::assertFalse(
+            $this->task()->with(['translatedHash' => 'aaa', 'sourceHash' => 'bbb'])->isSettled(),
+            'edited since the translation',
+        );
     }
 
     #[Test]
@@ -70,6 +83,6 @@ final class TranslationTaskTest extends TestCase
     {
         $updated = $this->task()->with([]);
 
-        self::assertGreaterThan($this->task()->updatedAt, $updated->updatedAt);
+        self::assertGreaterThan($this->task()->getUpdatedAt(), $updated->getUpdatedAt());
     }
 }

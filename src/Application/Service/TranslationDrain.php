@@ -33,12 +33,12 @@ final class TranslationDrain
         $gone = 0;
 
         foreach ($this->queue->due($batch) as $task) {
-            $translator = $this->surfaces->translator($task->translatorId);
+            $translator = $this->surfaces->translator($task->getTranslatorId());
 
             if ($translator === null) {
                 // The module that owned this ref is no longer installed for this
                 // tenant. Keeping the row would retry forever against nothing.
-                $this->queue->forget($task->ref);
+                $this->queue->forget($task->getRef());
                 $gone++;
                 continue;
             }
@@ -46,10 +46,10 @@ final class TranslationDrain
             // Re-read the text now rather than trusting the hash stored when the
             // save happened: an edit may have landed since, and translating the
             // older text would ship a version nobody asked for.
-            $hash = $translator->fingerprint($task->ref);
+            $hash = $translator->fingerprint($task->getRef());
 
             if ($hash === null) {
-                $this->queue->forget($task->ref);
+                $this->queue->forget($task->getRef());
                 $gone++;
                 continue;
             }
@@ -60,14 +60,14 @@ final class TranslationDrain
             // the module changed what it considers translatable. Settling
             // against a hash nobody recognises leaves the row due forever,
             // re-translating the same text on every tick.
-            $this->queue->enqueue($task->ref, $task->translatorId, $hash, 0);
+            $this->queue->enqueue($task->getRef(), $task->getTranslatorId(), $hash, 0);
 
             try {
-                $translator->translate($task->ref);
-                $this->queue->settle($task->ref, $hash);
+                $translator->translate($task->getRef());
+                $this->queue->settle($task->getRef(), $hash);
                 $done++;
             } catch (\Throwable $e) {
-                $this->queue->fail($task->ref, $e->getMessage());
+                $this->queue->fail($task->getRef(), $e->getMessage());
                 $failed++;
             }
         }

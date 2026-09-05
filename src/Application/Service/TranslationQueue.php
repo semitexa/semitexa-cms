@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Cms\Application\Db\MySQL\Model\TranslationTaskResource;
+use Semitexa\Cms\Domain\Model\TranslationTask;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Tenant\TenantContextAccess;
@@ -72,7 +73,7 @@ final class TranslationQueue
         $row = $this->find($ref);
 
         if ($row === null) {
-            $this->repository()->insert(new TranslationTaskResource(
+            $this->repository()->insert(new TranslationTask(
                 id: Uuid7::generate(),
                 tenantId: $this->currentTenantId(),
                 ref: $ref,
@@ -89,35 +90,35 @@ final class TranslationQueue
             return;
         }
 
-        $changed = $row->sourceHash !== $sourceHash;
+        $changed = $row->getSourceHash() !== $sourceHash;
 
         $this->repository()->update($row->with([
             'translatorId' => $translatorId,
             'sourceHash' => $sourceHash,
             // Already translated exactly this text: nothing is owed.
-            'dueAt' => $row->translatedHash === $sourceHash ? null : $due,
-            'attempts' => $changed ? 0 : $row->attempts,
-            'lastError' => $changed ? null : $row->lastError,
+            'dueAt' => $row->getTranslatedHash() === $sourceHash ? null : $due,
+            'attempts' => $changed ? 0 : $row->getAttempts(),
+            'lastError' => $changed ? null : $row->getLastError(),
         ]));
     }
 
     /**
      * Records whose window has closed, oldest deadline first.
      *
-     * @return list<TranslationTaskResource>
+     * @return list<TranslationTask>
      */
     public function due(int $limit = 10, ?\DateTimeImmutable $now = null): array
     {
         $now ??= new \DateTimeImmutable();
 
-        /** @var list<TranslationTaskResource> $rows */
+        /** @var list<TranslationTask> $rows */
         $rows = $this->repository()->query()
             ->whereNotNull(TranslationTaskResource::column('dueAt'))
             ->where(TranslationTaskResource::column('dueAt'), Operator::LessThanOrEquals, $now->format('Y-m-d H:i:s'))
             ->where(TranslationTaskResource::column('attempts'), Operator::LessThan, self::MAX_ATTEMPTS)
             ->orderBy(TranslationTaskResource::column('dueAt'), Direction::Asc)
             ->limit(max(1, $limit))
-            ->fetchAllAs(TranslationTaskResource::class, $this->mapperRegistry());
+            ->fetchAllAs(TranslationTask::class, $this->mapperRegistry());
 
         return $rows;
     }
@@ -143,7 +144,7 @@ final class TranslationQueue
             // Only settle when this IS the current text: an edit that landed
             // while the translation was in flight has already re-stamped the
             // row, and settling would declare the newer text done.
-            'dueAt' => $row->sourceHash === $translatedHash ? null : $row->dueAt,
+            'dueAt' => $row->getSourceHash() === $translatedHash ? null : $row->getDueAt(),
         ]));
     }
 
@@ -155,7 +156,7 @@ final class TranslationQueue
         }
 
         $this->repository()->update($row->with([
-            'attempts' => $row->attempts + 1,
+            'attempts' => $row->getAttempts() + 1,
             'lastError' => mb_substr($error, 0, 500),
             'dueAt' => (new \DateTimeImmutable())->modify('+' . self::RETRY_MINUTES . ' minutes'),
         ]));
@@ -169,20 +170,20 @@ final class TranslationQueue
         }
     }
 
-    public function find(string $ref): ?TranslationTaskResource
+    public function find(string $ref): ?TranslationTask
     {
         $row = $this->repository()->query()
             ->where(TranslationTaskResource::column('ref'), Operator::Equals, trim($ref))
-            ->fetchOneAs(TranslationTaskResource::class, $this->mapperRegistry());
+            ->fetchOneAs(TranslationTask::class, $this->mapperRegistry());
 
-        return $row instanceof TranslationTaskResource ? $row : null;
+        return $row instanceof TranslationTask ? $row : null;
     }
 
     private function repository(): DomainRepository
     {
-        // Resource doubles as its own domain model: the task is bookkeeping, and
-        // a second class to carry six fields would be ceremony.
-        return $this->domainRepository(TranslationTaskResource::class)->forTenant($this->currentTenantId());
+        // The query still speaks in columns — TranslationTaskResource::column() —
+        // while everything above reasons about a TranslationTask.
+        return $this->domainRepository(TranslationTaskResource::class, TranslationTask::class)->forTenant($this->currentTenantId());
     }
 
     private function currentTenantId(): string

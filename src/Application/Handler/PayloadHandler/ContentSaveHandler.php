@@ -7,7 +7,10 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
+use Semitexa\Cms\Application\Service\SeoDrain;
+use Semitexa\Cms\Application\Service\SeoStore;
 use Semitexa\Cms\Application\Service\TranslationQueue;
+use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -44,11 +47,19 @@ final class ContentSaveHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected TranslationQueue $translations;
 
+    #[InjectAsReadonly]
+    protected SeoStore $seo;
+
+    /** Only for its fingerprint — the drain, not the writing, happens later. */
+    #[InjectAsReadonly]
+    protected SeoDrain $seoDrain;
+
     public function handle(ContentSavePayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
         $node = $ref === '' ? null : $this->graph->nodeByRef($ref);
-        $editorId = is_string($node?->properties['editor'] ?? null) ? (string) $node->properties['editor'] : '';
+        $declaredEditor = $node?->getProperties()['editor'] ?? null;
+        $editorId = is_string($declaredEditor) ? $declaredEditor : '';
         $editor = $editorId === '' ? $this->editorForRef($ref) : $this->surfaces->editor($editorId);
 
         if ($editor === null) {
@@ -59,6 +70,10 @@ final class ContentSaveHandler implements TypedHandlerInterface
         try {
             $editor->save($ref, $payload->submittedValues());
             $this->queueTranslation($ref, $editor->editorId());
+            $saved = $editor->load($ref);
+            if ($saved !== null) {
+                $this->queueSeo($ref, $editor->editorId(), $saved);
+            }
         } catch (\InvalidArgumentException $e) {
             $error = $e->getMessage();
         } catch (\Throwable) {
@@ -125,6 +140,24 @@ final class ContentSaveHandler implements TypedHandlerInterface
         if ($hash !== null) {
             $this->translations->enqueue($ref, $editorId, $hash);
         }
+    }
+
+    /**
+     * Park the page for a metadata rewrite — deferred, never on the write.
+     *
+     * Same reasoning as the translation queue beside it, and the same window:
+     * an editor fixing a comma five times in a row would otherwise buy five
+     * descriptions of five nearly identical pages, of which only the last was
+     * ever read. The deadline slides with each save, so the model sees the text
+     * they settled on.
+     */
+    private function queueSeo(string $ref, string $editorId, ContentDraft $draft): void
+    {
+        if (!isset($this->seo) || !isset($this->seoDrain)) {
+            return;
+        }
+
+        $this->seo->touch($ref, $editorId, $this->seoDrain->fingerprint($draft));
     }
 
     private function html(ResourceResponse $resource, string $html): ResourceResponse
