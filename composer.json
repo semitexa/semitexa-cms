@@ -18,7 +18,8 @@
         "semitexa/orm": "*",
         "semitexa/scheduler": "*",
         "semitexa/os": "*",
-        "semitexa/weave": "*"
+        "semitexa/weave": "*",
+        "symfony/html-sanitizer": "^7.0"
     },
     "require-dev": {
         "phpunit/phpunit": "^10.0"

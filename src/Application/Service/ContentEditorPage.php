@@ -8,6 +8,8 @@ use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Ssr\Application\Service\Asset\AssetManager;
+use Semitexa\Ssr\Application\Service\Asset\ScriptNonceSource;
 
 /**
  * Renders the editor dialog.
@@ -22,9 +24,14 @@ final class ContentEditorPage
     public function render(ContentDraft $draft, string $csrfToken, ?string $savedMessage = null, ?string $error = null): string
     {
         $fields = '';
+        $rich = false;
         foreach ($draft->fields as $field) {
             $fields .= $this->field($field);
+            $rich = $rich || $field->kind === ContentField::HTML;
         }
+
+        // Only a draft that actually has a rich field pays for the editor.
+        $richHead = $rich ? $this->richEditorHead() : '';
 
         $title = $this->escape($draft->title);
         $ref = $this->escape($draft->ref);
@@ -45,6 +52,7 @@ final class ContentEditorPage
 <!DOCTYPE html>
 <html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{$title}</title>
+{$richHead}
 <style>
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);
@@ -53,7 +61,7 @@ final class ContentEditorPage
   .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .view{margin-left:auto;font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap}
   form{flex:1;overflow:auto;padding:16px;display:grid;gap:14px;align-content:start}
-  label{display:grid;gap:6px;font-size:12px;color:var(--mute)}
+  label,.field{display:grid;gap:6px;font-size:12px;color:var(--mute)}
   input,textarea{width:100%;padding:10px 12px;border-radius:9px;border:1px solid rgba(var(--line-rgb),.25);
     background:rgba(var(--ink-rgb),.6);color:var(--strong);font-size:14px;font-family:inherit}
   textarea{min-height:200px;line-height:1.6;resize:vertical}
@@ -173,11 +181,90 @@ HTML;
         $required = $field->required ? ' required' : '';
         $hint = $field->hint === '' ? '' : '<span class="hint">' . $this->escape($field->hint) . '</span>';
 
-        $control = $field->kind === ContentField::LINE
-            ? '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>'
-            : '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>';
+        $control = match ($field->kind) {
+            ContentField::LINE => '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>',
+            ContentField::HTML => $this->richControl($name, $value, $required),
+            default => '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>',
+        };
+
+        // A <label> forwards a click anywhere inside it to the first labelable
+        // control it contains — and Trix inserts its toolbar INTO this wrapper,
+        // ahead of the editor. Inside a label that makes the toolbar's first
+        // button the labelled control, so clicking the editor body pressed
+        // «Bold» instead of placing the caret. The rich field gets a plain
+        // wrapper; the others keep the label they are correctly paired with.
+        if ($field->kind === ContentField::HTML) {
+            return '<div class="field"><span>' . $label . '</span>' . $control . $hint . '</div>';
+        }
 
         return '<label>' . $label . $control . $hint . '</label>';
+    }
+
+    /**
+     * The rich-text control: a hidden input Trix reads from and writes back to.
+     *
+     * The input carries the value in both directions, so the field posts under
+     * its own name exactly as the textarea did — nothing downstream learns that
+     * the control changed. `required` stays on the input rather than on
+     * <trix-editor>, which is not a form control the browser validates.
+     */
+    private function richControl(string $escapedName, string $escapedValue, string $required): string
+    {
+        // The id is derived from the field name, which is an author-facing key
+        // and already escaped; the slug keeps it a valid id whatever it holds.
+        $id = 'rich-' . preg_replace('/[^A-Za-z0-9_-]/', '-', $escapedName);
+
+        return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '" value="' . $escapedValue . '"' . $required . '>'
+            . '<trix-editor input="' . $id . '" class="rich"></trix-editor>';
+    }
+
+    /**
+     * Stylesheet, script and CSP nonce for the vendored editor.
+     *
+     * Trix styles itself by inserting a <style> element into the head, and
+     * reads a nonce from `<meta name="trix-csp-nonce">` before doing so — so a
+     * surface under a strict `style-src` has to hand it one, or the editor
+     * renders unstyled with nothing in the page to explain why. When the
+     * application registers no nonce provider the meta is omitted entirely
+     * rather than emitted empty, which would be a claim we cannot back.
+     */
+    private function richEditorHead(): string
+    {
+        $nonce = ScriptNonceSource::value();
+        $meta = $nonce === ''
+            ? ''
+            : '<meta name="trix-csp-nonce" content="' . $this->escape($nonce) . '">' . "\n";
+
+        $css = $this->escape(AssetManager::getUrl('vendor/trix/trix.css', 'cms'));
+        $js = $this->escape(AssetManager::getUrl('vendor/trix/trix.umd.min.js', 'cms'));
+
+        // Only colour and spacing are touched — nothing that changes how the
+        // editor behaves. Emitted here rather than in the page's own style
+        // block so a draft with no rich field carries none of it.
+        $skin = <<<CSS
+<style>
+  trix-toolbar .trix-button-group{border-color:rgba(var(--line-rgb),.25);margin-bottom:6px}
+  trix-toolbar .trix-button{background:rgba(var(--ink-rgb),.6);border-bottom:none;color:var(--strong)}
+  trix-toolbar .trix-button:not(:disabled):hover{background:rgba(var(--line-rgb),.18)}
+  trix-toolbar .trix-button.trix-active{background:var(--accent);color:#04121f}
+  trix-toolbar .trix-button:disabled{opacity:.35}
+  trix-editor.rich{min-height:220px;line-height:1.6;padding:10px 12px;border-radius:9px;
+    border:1px solid rgba(var(--line-rgb),.25);background:rgba(var(--ink-rgb),.6);color:var(--strong);font-size:14px}
+  trix-editor.rich:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2)}
+  trix-editor.rich a{color:var(--accent)}
+  trix-editor.rich blockquote{border-left:2px solid rgba(var(--line-rgb),.4);margin:0;padding-left:12px;color:var(--mute)}
+</style>
+CSS;
+
+        // Ours, loaded after the editor: it only binds trix-* listeners, and
+        // those fire on events the bundle dispatches.
+        $wiring = $this->escape(AssetManager::getUrl('js/content-editor.js', 'cms'));
+
+        return $meta
+            . '<link rel="stylesheet" href="' . $css . '">' . "\n"
+            . $skin . "\n"
+            . '<script src="' . $js . '" defer' . ScriptNonceSource::attribute() . '></script>' . "\n"
+            . '<script src="' . $wiring . '" defer' . ScriptNonceSource::attribute() . '></script>';
     }
 
     private function escape(string $value): string
