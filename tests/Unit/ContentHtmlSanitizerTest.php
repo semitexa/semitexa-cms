@@ -134,6 +134,31 @@ final class ContentHtmlSanitizerTest extends TestCase
         yield 'data uri' => ['data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg=='];
     }
 
+    /**
+     * Dropping the image should drop the place it sat. An empty figure still
+     * takes vertical space in the rendered article, so the reader gets a gap
+     * where a picture was refused and the author a hole they cannot select.
+     */
+    #[Test]
+    public function refusing_an_image_does_not_leave_its_frame_behind(): void
+    {
+        $out = $this->sanitizer->sanitize('<figure><img src="https://evil.test/p.png"></figure><div>текст</div>');
+
+        self::assertStringNotContainsString('figure', $out);
+        self::assertStringContainsString('<div>текст</div>', $out);
+    }
+
+    /** A figure that still holds something is left alone. */
+    #[Test]
+    public function a_figure_with_a_caption_survives(): void
+    {
+        $out = $this->sanitizer->sanitize(
+            '<figure><img src="/os/app/cms/media/a"><figcaption>Підпис</figcaption></figure>',
+        );
+
+        self::assertStringContainsString('<figcaption>Підпис</figcaption>', $out);
+    }
+
     /** No src at all is not an image, whatever else it carries. */
     #[Test]
     public function an_image_without_a_source_is_dropped(): void

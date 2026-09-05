@@ -78,7 +78,24 @@ final class ContentHtmlSanitizer
 
     public function sanitize(string $html): string
     {
-        return $this->dropForeignImages($this->sanitizer()->sanitize($html));
+        return $this->dropEmptyFigures($this->dropForeignImages($this->sanitizer()->sanitize($html)));
+    }
+
+    /**
+     * Remove a <figure> left holding nothing.
+     *
+     * Dropping a foreign image leaves its wrapper behind, and an empty figure
+     * still takes vertical space in a rendered article — so the reader sees a
+     * gap where a picture was refused, and the author sees a hole they cannot
+     * select or delete. Removing the image should remove the place it sat.
+     */
+    private function dropEmptyFigures(string $html): string
+    {
+        if (!str_contains($html, '<figure')) {
+            return $html;
+        }
+
+        return (string) preg_replace('#<figure\b[^>]*>\s*</figure>#i', '', $html);
     }
 
     /**
