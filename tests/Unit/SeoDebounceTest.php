@@ -68,7 +68,7 @@ final class SeoDebounceTest extends TestCase
         $due = $this->store->due(10, $this->afterTheWindow());
 
         self::assertCount(1, $due);
-        self::assertSame('page:about', $due[0]->ref);
+        self::assertSame('page:about', $due[0]->getRef());
     }
 
     #[Test]

@@ -6,6 +6,7 @@ namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Cms\Application\Db\MySQL\Model\ContentSeoResource;
 use Semitexa\Cms\Domain\Model\ContentSeo;
+use Semitexa\Cms\Domain\Model\ContentSeoRecord;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Tenant\TenantContextAccess;
@@ -55,9 +56,7 @@ final class SeoStore
     /** The metadata for a page — an empty record when it has none yet. */
     public function get(string $ref): ContentSeo
     {
-        $row = $this->find(trim($ref));
-
-        return $row === null ? new ContentSeo(ref: trim($ref)) : $this->toSeo($row);
+        return $this->find(trim($ref))?->getSeo() ?? new ContentSeo(ref: trim($ref));
     }
 
     /**
@@ -78,7 +77,7 @@ final class SeoStore
         $row = $this->find($ref);
 
         if ($row === null) {
-            $this->repository()->insert($this->newRow($ref, $editorId, $due, $now));
+            $this->repository()->insert($this->newRecord($ref, $editorId, $due, $now));
 
             return;
         }
@@ -86,33 +85,33 @@ final class SeoStore
         // Already written from exactly this text: nothing is owed. This is the
         // case that makes a burst of corrections cheap — an editor who changes
         // a word and changes it back cancels the work instead of buying it.
-        $settled = $row->sourceHash !== '' && $row->sourceHash === $sourceHash;
+        $settled = $row->getSeo()->sourceHash !== '' && $row->getSeo()->sourceHash === $sourceHash;
 
         $this->repository()->update($row->with([
             'editorId' => $editorId,
             'dueAt' => $settled ? null : $due,
-            'attempts' => $settled ? $row->attempts : 0,
-            'lastError' => $settled ? $row->lastError : null,
+            'attempts' => $settled ? $row->getAttempts() : 0,
+            'lastError' => $settled ? $row->getLastError() : null,
         ]));
     }
 
     /**
      * Pages whose window has closed, oldest deadline first.
      *
-     * @return list<ContentSeoResource>
+     * @return list<ContentSeoRecord>
      */
     public function due(int $limit = 10, ?\DateTimeImmutable $now = null): array
     {
         $now ??= new \DateTimeImmutable();
 
-        /** @var list<ContentSeoResource> $rows */
+        /** @var list<ContentSeoRecord> $rows */
         $rows = $this->repository()->query()
             ->whereNotNull(ContentSeoResource::column('dueAt'))
             ->where(ContentSeoResource::column('dueAt'), Operator::LessThanOrEquals, $now->format('Y-m-d H:i:s'))
             ->where(ContentSeoResource::column('attempts'), Operator::LessThan, self::MAX_ATTEMPTS)
             ->orderBy(ContentSeoResource::column('dueAt'), Direction::Asc)
             ->limit(max(1, $limit))
-            ->fetchAllAs(ContentSeoResource::class, $this->mapperRegistry());
+            ->fetchAllAs(ContentSeoRecord::class, $this->mapperRegistry());
 
         return $rows;
     }
@@ -155,18 +154,8 @@ final class SeoStore
     {
         $ref = trim($seo->ref);
         $row = $this->find($ref);
-        $next = ($row ?? $this->newRow($ref, $editorId, null, new \DateTimeImmutable()))->with([
-            'editorId' => $editorId,
-            'title' => $seo->title,
-            'description' => $seo->description,
-            'ogTitle' => $seo->ogTitle,
-            'ogDescription' => $seo->ogDescription,
-            'ogImage' => $seo->ogImage,
-            'jsonLd' => $seo->jsonLd,
-            'canonical' => $seo->canonical,
-            'robots' => $seo->robots,
-            'authoredJson' => (string) json_encode($seo->authored, JSON_UNESCAPED_UNICODE),
-        ] + $schedule);
+        $next = ($row ?? $this->newRecord($ref, $editorId, null, new \DateTimeImmutable()))
+            ->with(['editorId' => $editorId, 'seo' => $seo] + $schedule);
 
         $row === null ? $this->repository()->insert($next) : $this->repository()->update($next);
     }
@@ -179,7 +168,7 @@ final class SeoStore
             return;
         }
 
-        $attempts = $row->attempts + 1;
+        $attempts = $row->getAttempts() + 1;
         $this->repository()->update($row->with([
             'attempts' => $attempts,
             'lastError' => mb_substr($error, 0, 500),
@@ -198,52 +187,23 @@ final class SeoStore
         }
     }
 
-    private function find(string $ref): ?ContentSeoResource
+    private function find(string $ref): ?ContentSeoRecord
     {
-        /** @var ContentSeoResource|null $row */
+        /** @var ContentSeoRecord|null $row */
         $row = $this->repository()->query()
             ->where(ContentSeoResource::column('ref'), Operator::Equals, $ref)
-            ->fetchOneAs(ContentSeoResource::class, $this->mapperRegistry());
+            ->fetchOneAs(ContentSeoRecord::class, $this->mapperRegistry());
 
         return $row;
     }
 
-    private function toSeo(ContentSeoResource $row): ContentSeo
+    private function newRecord(string $ref, string $editorId, ?\DateTimeImmutable $due, \DateTimeImmutable $now): ContentSeoRecord
     {
-        $authored = json_decode($row->authoredJson, true);
-
-        return new ContentSeo(
-            ref: $row->ref,
-            title: $row->title,
-            description: $row->description,
-            ogTitle: $row->ogTitle,
-            ogDescription: $row->ogDescription,
-            ogImage: $row->ogImage,
-            jsonLd: $row->jsonLd,
-            canonical: $row->canonical,
-            robots: $row->robots,
-            authored: is_array($authored) ? array_values(array_filter($authored, 'is_string')) : [],
-            sourceHash: $row->sourceHash,
-        );
-    }
-
-    private function newRow(string $ref, string $editorId, ?\DateTimeImmutable $due, \DateTimeImmutable $now): ContentSeoResource
-    {
-        return new ContentSeoResource(
+        return new ContentSeoRecord(
             id: Uuid7::generate(),
             tenantId: $this->currentTenantId(),
-            ref: $ref,
             editorId: $editorId,
-            title: '',
-            description: '',
-            ogTitle: '',
-            ogDescription: '',
-            ogImage: '',
-            jsonLd: '',
-            canonical: '',
-            robots: '',
-            authoredJson: '[]',
-            sourceHash: '',
+            seo: new ContentSeo(ref: $ref),
             dueAt: $due,
             attempts: 0,
             lastError: null,
@@ -254,7 +214,7 @@ final class SeoStore
 
     private function repository(): DomainRepository
     {
-        return $this->domainRepository(ContentSeoResource::class)->forTenant($this->currentTenantId());
+        return $this->domainRepository(ContentSeoResource::class, ContentSeoRecord::class)->forTenant($this->currentTenantId());
     }
 
     private function currentTenantId(): string

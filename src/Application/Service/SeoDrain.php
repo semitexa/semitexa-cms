@@ -37,11 +37,11 @@ final class SeoDrain
         $skipped = 0;
 
         foreach ($this->store->due($batch) as $row) {
-            $editor = $this->surfaces->editor($row->editorId);
+            $editor = $this->surfaces->editor($row->getEditorId());
             if ($editor === null) {
                 // The module that owned this ref is no longer installed for this
                 // tenant. Keeping the row would retry forever against nothing.
-                $this->store->forget($row->ref);
+                $this->store->forget($row->getRef());
                 $gone++;
                 continue;
             }
@@ -49,30 +49,30 @@ final class SeoDrain
             // Re-read the page NOW rather than trusting the hash stored when the
             // save happened: more edits may have landed inside the window, and
             // describing the older text would publish a version nobody wrote.
-            $draft = $editor->load($row->ref);
+            $draft = $editor->load($row->getRef());
             if ($draft === null) {
-                $this->store->forget($row->ref);
+                $this->store->forget($row->getRef());
                 $gone++;
                 continue;
             }
 
-            $seo = $this->store->get($row->ref);
+            $seo = $this->store->get($row->getRef());
             $hash = $this->fingerprint($draft);
 
             if (!$seo->isEmpty() && !$seo->isStale($hash)) {
                 // Described from exactly this text already — the window closed
                 // on an edit that undid itself. Settle for nothing.
-                $this->store->settle($seo, $row->editorId, $hash);
+                $this->store->settle($seo, $row->getEditorId(), $hash);
                 $skipped++;
                 continue;
             }
 
             try {
                 $written = $this->writer->write($seo, $draft, $hash);
-                $this->store->settle($written, $row->editorId, $this->fingerprint($editor->load($row->ref) ?? $draft));
+                $this->store->settle($written, $row->getEditorId(), $this->fingerprint($editor->load($row->getRef()) ?? $draft));
                 $done++;
             } catch (\Throwable $e) {
-                $this->store->fail($row->ref, $e->getMessage());
+                $this->store->fail($row->getRef(), $e->getMessage());
                 $failed++;
             }
         }

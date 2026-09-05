@@ -5,36 +5,82 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Db\MySQL\Mapper;
 
 use Semitexa\Cms\Application\Db\MySQL\Model\ContentSeoResource;
+use Semitexa\Cms\Domain\Model\ContentSeo;
+use Semitexa\Cms\Domain\Model\ContentSeoRecord;
 use Semitexa\Orm\Attribute\AsMapper;
 use Semitexa\Orm\Domain\Contract\ResourceModelMapperInterface;
 
 /**
- * Self-mapping mapper for {@see ContentSeoResource}, matching
- * {@see TranslationTaskMapper} beside it and the summary mapper in semitexa-os.
+ * The bridge between the MySQL row and the record the CMS works in.
  *
- * The row carries a page's metadata AND the schedule for rewriting it, and the
- * ORM's write path maps domain → source, so a mapper onto a narrower domain
- * model could not rebuild the id, tenant, deadline or attempt count. The ORM's
- * own MissingMapperException asks for exactly this shape by name.
- *
- * NOTE: `semitexa.noOpMapper` rejects that shape. The two are in direct
- * contradiction and every bookkeeping table in the framework is on this side of
- * it; reported rather than worked around.
+ * The two differ in more than naming: the row keeps the claimed-field list as a
+ * JSON string and every meta field flat, because that is what a column can
+ * hold, while the record carries a {@see ContentSeo} value object with the list
+ * as an array. Another database's resource would spell all of that differently
+ * and still map onto the same record.
  */
-#[AsMapper(resourceModel: ContentSeoResource::class, domainModel: ContentSeoResource::class)]
+#[AsMapper(resourceModel: ContentSeoResource::class, domainModel: ContentSeoRecord::class)]
 final class ContentSeoMapper implements ResourceModelMapperInterface
 {
     public function toDomain(object $resourceModel): object
     {
         $resourceModel instanceof ContentSeoResource || throw new \InvalidArgumentException('Unexpected resource model.');
 
-        return $resourceModel;
+        $authored = json_decode($resourceModel->authoredJson, true);
+
+        return new ContentSeoRecord(
+            id: $resourceModel->id,
+            tenantId: $resourceModel->tenantId,
+            editorId: $resourceModel->editorId,
+            seo: new ContentSeo(
+                ref: $resourceModel->ref,
+                title: $resourceModel->title,
+                description: $resourceModel->description,
+                ogTitle: $resourceModel->ogTitle,
+                ogDescription: $resourceModel->ogDescription,
+                ogImage: $resourceModel->ogImage,
+                jsonLd: $resourceModel->jsonLd,
+                canonical: $resourceModel->canonical,
+                robots: $resourceModel->robots,
+                // A hand-edited row must not take the store down with it.
+                authored: is_array($authored) ? array_values(array_filter($authored, 'is_string')) : [],
+                sourceHash: $resourceModel->sourceHash,
+            ),
+            dueAt: $resourceModel->dueAt,
+            attempts: $resourceModel->attempts,
+            lastError: $resourceModel->lastError,
+            createdAt: $resourceModel->createdAt,
+            updatedAt: $resourceModel->updatedAt,
+        );
     }
 
     public function toSourceModel(object $domainModel): object
     {
-        $domainModel instanceof ContentSeoResource || throw new \InvalidArgumentException('Unexpected domain model.');
+        $domainModel instanceof ContentSeoRecord || throw new \InvalidArgumentException('Unexpected domain model.');
 
-        return $domainModel;
+        $now = new \DateTimeImmutable();
+        $seo = $domainModel->getSeo();
+
+        return new ContentSeoResource(
+            id: $domainModel->getId(),
+            tenantId: $domainModel->getTenantId(),
+            ref: $seo->ref,
+            editorId: $domainModel->getEditorId(),
+            title: $seo->title,
+            description: $seo->description,
+            ogTitle: $seo->ogTitle,
+            ogDescription: $seo->ogDescription,
+            ogImage: $seo->ogImage,
+            jsonLd: $seo->jsonLd,
+            canonical: $seo->canonical,
+            robots: $seo->robots,
+            authoredJson: (string) json_encode($seo->authored, JSON_UNESCAPED_UNICODE),
+            sourceHash: $seo->sourceHash,
+            dueAt: $domainModel->getDueAt(),
+            attempts: $domainModel->getAttempts(),
+            lastError: $domainModel->getLastError(),
+            createdAt: $domainModel->getCreatedAt() ?? $now,
+            updatedAt: $domainModel->getUpdatedAt() ?? $now,
+        );
     }
 }
