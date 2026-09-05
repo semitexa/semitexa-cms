@@ -61,7 +61,7 @@ final class ContentEditorPage
   .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .view{margin-left:auto;font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap}
   form{flex:1;overflow:auto;padding:16px;display:grid;gap:14px;align-content:start}
-  label{display:grid;gap:6px;font-size:12px;color:var(--mute)}
+  label,.field{display:grid;gap:6px;font-size:12px;color:var(--mute)}
   input,textarea{width:100%;padding:10px 12px;border-radius:9px;border:1px solid rgba(var(--line-rgb),.25);
     background:rgba(var(--ink-rgb),.6);color:var(--strong);font-size:14px;font-family:inherit}
   textarea{min-height:200px;line-height:1.6;resize:vertical}
@@ -186,6 +186,16 @@ HTML;
             ContentField::HTML => $this->richControl($name, $value, $required),
             default => '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>',
         };
+
+        // A <label> forwards a click anywhere inside it to the first labelable
+        // control it contains — and Trix inserts its toolbar INTO this wrapper,
+        // ahead of the editor. Inside a label that makes the toolbar's first
+        // button the labelled control, so clicking the editor body pressed
+        // «Bold» instead of placing the caret. The rich field gets a plain
+        // wrapper; the others keep the label they are correctly paired with.
+        if ($field->kind === ContentField::HTML) {
+            return '<div class="field"><span>' . $label . '</span>' . $control . $hint . '</div>';
+        }
 
         return '<label>' . $label . $control . $hint . '</label>';
     }

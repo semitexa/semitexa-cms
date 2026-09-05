@@ -52,6 +52,21 @@ final class ContentEditorRichFieldTest extends TestCase
         self::assertStringNotContainsString('value="<p>', $html);
     }
 
+    /**
+     * Trix inserts its toolbar into the element that wraps the editor. A
+     * <label> would then treat the toolbar's first button as its labelled
+     * control and forward every click inside the field to it — clicking the
+     * text you are writing would toggle bold. So the rich field is not a label.
+     */
+    #[Test]
+    public function the_rich_field_is_not_wrapped_in_a_label(): void
+    {
+        $html = $this->render([ContentField::html('body', 'Текст', '')]);
+
+        self::assertStringContainsString('<div class="field"><span>Текст</span><input id="rich-body"', $html);
+        self::assertStringNotContainsString('<label>', $html);
+    }
+
     #[Test]
     public function a_plain_text_field_is_still_a_textarea(): void
     {
