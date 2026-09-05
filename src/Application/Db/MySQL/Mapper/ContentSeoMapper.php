@@ -74,7 +74,7 @@ final class ContentSeoMapper implements ResourceModelMapperInterface
             jsonLd: $seo->jsonLd,
             canonical: $seo->canonical,
             robots: $seo->robots,
-            authoredJson: (string) json_encode($seo->authored, JSON_UNESCAPED_UNICODE),
+            authoredJson: (string) json_encode($seo->authored, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE),
             sourceHash: $seo->sourceHash,
             dueAt: $domainModel->getDueAt(),
             attempts: $domainModel->getAttempts(),
