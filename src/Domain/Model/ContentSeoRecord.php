@@ -89,16 +89,20 @@ final readonly class ContentSeoRecord
      */
     public function with(array $changes): self
     {
-        $take = fn (string $key, mixed $current): mixed => array_key_exists($key, $changes) ? $changes[$key] : $current;
-
         return new self(
             id: $this->id,
             tenantId: $this->tenantId,
-            editorId: $take('editorId', $this->editorId),
-            seo: $take('seo', $this->seo),
-            dueAt: $take('dueAt', $this->dueAt),
-            attempts: $take('attempts', $this->attempts),
-            lastError: $take('lastError', $this->lastError),
+            editorId: is_string($changes['editorId'] ?? null) ? $changes['editorId'] : $this->editorId,
+            seo: array_key_exists('seo', $changes) && $changes['seo'] instanceof ContentSeo
+                ? $changes['seo']
+                : $this->seo,
+            dueAt: array_key_exists('dueAt', $changes)
+                ? ($changes['dueAt'] instanceof \DateTimeImmutable ? $changes['dueAt'] : null)
+                : $this->dueAt,
+            attempts: is_int($changes['attempts'] ?? null) ? $changes['attempts'] : $this->attempts,
+            lastError: array_key_exists('lastError', $changes)
+                ? (is_string($changes['lastError']) ? $changes['lastError'] : null)
+                : $this->lastError,
             createdAt: $this->createdAt,
             updatedAt: new \DateTimeImmutable(),
         );

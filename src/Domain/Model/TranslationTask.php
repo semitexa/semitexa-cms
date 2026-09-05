@@ -109,18 +109,22 @@ final readonly class TranslationTask
      */
     public function with(array $changes): self
     {
-        $take = fn (string $key, mixed $current): mixed => array_key_exists($key, $changes) ? $changes[$key] : $current;
-
         return new self(
             id: $this->id,
             tenantId: $this->tenantId,
             ref: $this->ref,
-            translatorId: $take('translatorId', $this->translatorId),
-            sourceHash: $take('sourceHash', $this->sourceHash),
-            translatedHash: $take('translatedHash', $this->translatedHash),
-            dueAt: $take('dueAt', $this->dueAt),
-            attempts: $take('attempts', $this->attempts),
-            lastError: $take('lastError', $this->lastError),
+            translatorId: is_string($changes['translatorId'] ?? null) ? $changes['translatorId'] : $this->translatorId,
+            sourceHash: is_string($changes['sourceHash'] ?? null) ? $changes['sourceHash'] : $this->sourceHash,
+            translatedHash: array_key_exists('translatedHash', $changes)
+                ? (is_string($changes['translatedHash']) ? $changes['translatedHash'] : null)
+                : $this->translatedHash,
+            dueAt: array_key_exists('dueAt', $changes)
+                ? ($changes['dueAt'] instanceof \DateTimeImmutable ? $changes['dueAt'] : null)
+                : $this->dueAt,
+            attempts: is_int($changes['attempts'] ?? null) ? $changes['attempts'] : $this->attempts,
+            lastError: array_key_exists('lastError', $changes)
+                ? (is_string($changes['lastError']) ? $changes['lastError'] : null)
+                : $this->lastError,
             createdAt: $this->createdAt,
             updatedAt: new \DateTimeImmutable(),
         );
