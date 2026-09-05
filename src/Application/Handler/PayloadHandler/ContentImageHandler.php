@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentImagePayload;
+use Semitexa\Cms\Application\Service\ContentImageCollection;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Contract\TypedHandlerInterface;
@@ -29,6 +30,11 @@ use Semitexa\Media\Domain\Contract\MediaServiceInterface;
  * freshly uploaded image has not been transformed yet — the queue does that.
  * Serving the original in the meantime is what stops a just-saved article
  * showing broken pictures for however long the worker takes.
+ *
+ * This route is public and takes an id, so it says out loud which collection it
+ * serves. Without that an id is a bearer token for the whole media store: every
+ * collection an installation has — a private one, someone's documents — is
+ * reachable through the address meant for article pictures.
  */
 #[AsPayloadHandler(payload: ContentImagePayload::class, resource: ResourceResponse::class)]
 final class ContentImageHandler implements TypedHandlerInterface
@@ -43,7 +49,7 @@ final class ContentImageHandler implements TypedHandlerInterface
     {
         $assetId = trim($payload->getAssetId());
 
-        if ($assetId === '') {
+        if ($assetId === '' || !$this->media->belongsToCollection($assetId, ContentImageCollection::KEY)) {
             return $this->notFound($resource);
         }
 
@@ -52,9 +58,10 @@ final class ContentImageHandler implements TypedHandlerInterface
         if ($url === '') {
             $object = $this->media->readObject($assetId, self::VARIANT);
 
-            // Now the id really does name nothing — or the object is gone from
-            // storage. Either way there is no image at this address, and saying
-            // which would describe our storage to the internet.
+            // The row is there but the object is not — deleted underneath us,
+            // or a storage that no longer holds it. There is no image at this
+            // address, and saying more would describe our storage to whoever
+            // asked.
             if ($object === null) {
                 return $this->notFound($resource);
             }
@@ -62,6 +69,10 @@ final class ContentImageHandler implements TypedHandlerInterface
             return $resource
                 ->setStatusCode(HttpStatus::Ok->value)
                 ->setHeader('Content-Type', $object->mimeType)
+                // The type is the collection's, not the uploader's — but this
+                // response carries bytes a stranger chose, and a browser that
+                // sniffs its way to something else would be executing them.
+                ->setHeader('X-Content-Type-Options', 'nosniff')
                 ->setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
                 ->setContent($object->contents);
         }

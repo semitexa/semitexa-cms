@@ -22,7 +22,10 @@ use Semitexa\Core\Http\Response\ResourceResponse;
  * article still resolves.
  *
  * Public because the images are part of the published page. The asset id is the
- * capability: it is not guessable, and nothing here lists them.
+ * capability: it is not guessable, and nothing here lists them. But a
+ * capability that opens every collection an installation has is the wrong
+ * capability, so the handler serves ContentImageCollection and refuses the
+ * rest — an id from a private collection is a 404 here like any other.
  */
 #[AsPublicPayload(
     path: '/os/app/cms/media/{assetId}',
