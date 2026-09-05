@@ -6,11 +6,13 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
+use Semitexa\Cms\Application\Service\ContentHtmlSanitizer;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Cms\Application\Service\SeoDrain;
 use Semitexa\Cms\Application\Service\SeoStore;
 use Semitexa\Cms\Application\Service\TranslationQueue;
 use Semitexa\Cms\Domain\Model\ContentDraft;
+use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -54,6 +56,9 @@ final class ContentSaveHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected SeoDrain $seoDrain;
 
+    #[InjectAsReadonly]
+    protected ContentHtmlSanitizer $sanitizer;
+
     public function handle(ContentSavePayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
@@ -66,9 +71,22 @@ final class ContentSaveHandler implements TypedHandlerInterface
             return $this->html($resource, $this->page->renderMissing($ref));
         }
 
+        // What the record looks like BEFORE the write, because that is the only
+        // place the field kinds are declared — and the kinds decide which
+        // submitted values are markup. A ref that names nothing has no fields
+        // to judge by, so there is nothing to sanitise against and nothing to
+        // save into: fail closed rather than write unexamined markup.
+        $before = $editor->load($ref);
+        if ($before === null) {
+            return $this->html($resource, $this->page->renderMissing($ref));
+        }
+
         $error = null;
         try {
-            $editor->save($ref, $payload->submittedValues());
+            $editor->save($ref, $this->sanitizer->sanitizeValues(
+                $payload->submittedValues(),
+                self::htmlFieldNames($before),
+            ));
             $this->queueTranslation($ref, $editor->editorId());
             $saved = $editor->load($ref);
             if ($saved !== null) {
@@ -177,5 +195,25 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $token = $this->session->getPayload(CsrfToken::class);
 
         return $token->getValue();
+    }
+
+    /**
+     * Names of the fields this editor declares as markup.
+     *
+     * Only these are sanitised: a LINE or TEXT field is plain text, and putting
+     * markup rules over it would eat a `<` an author legitimately typed.
+     *
+     * @return list<string>
+     */
+    private static function htmlFieldNames(ContentDraft $draft): array
+    {
+        $names = [];
+        foreach ($draft->fields as $field) {
+            if ($field->kind === ContentField::HTML) {
+                $names[] = $field->name;
+            }
+        }
+
+        return $names;
     }
 }
