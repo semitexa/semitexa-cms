@@ -119,7 +119,7 @@ final class SiteMapProjectorTest extends TestCase
 
         $collections = $this->store->nodesByKind(NodeKind::Collection);
         self::assertCount(1, $collections);
-        self::assertSame(86, $collections[0]->properties['count'] ?? null);
+        self::assertSame(86, $collections[0]->getProperties()['count'] ?? null);
     }
 
     #[Test]
@@ -130,14 +130,14 @@ final class SiteMapProjectorTest extends TestCase
 
         $node = $this->store->nodeByRef('regmus:page:1');
         self::assertNotNull($node);
-        $this->store->updateNode($node->id, 'Головна');
+        $this->store->updateNode($node->getId(), 'Головна');
 
         // The provider still reports the database title; the operator's rename
         // is the better one, but what must NOT happen is a second node.
         $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page')]));
 
         self::assertCount(1, $this->store->nodesByKind(NodeKind::Page));
-        self::assertSame($node->id, $this->store->nodeByRef('regmus:page:1')?->id);
+        self::assertSame($node->getId(), $this->store->nodeByRef('regmus:page:1')?->getId());
     }
 
     #[Test]
@@ -178,8 +178,8 @@ final class SiteMapProjectorTest extends TestCase
 
         self::assertCount(1, $this->store->nodesByKind(NodeKind::Org), 'The museum must not be duplicated.');
 
-        $neighbourhood = $this->store->neighborhood($existing->id);
-        $titles = array_map(static fn ($n): string => $n->title, $neighbourhood['neighbors'] ?? []);
+        $neighbourhood = $this->store->neighborhood($existing->getId());
+        $titles = array_map(static fn ($n): string => $n->getTitle(), $neighbourhood['neighbors'] ?? []);
         self::assertContains('Museum', $titles, 'The site should hang off the work.');
     }
 

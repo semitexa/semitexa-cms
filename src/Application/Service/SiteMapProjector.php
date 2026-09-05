@@ -107,9 +107,9 @@ final class SiteMapProjector
             self::SOURCE,
         );
 
-        $this->anchor($site->id, $siteRef, $provider->workTitle());
+        $this->anchor($site->getId(), $siteRef, $provider->workTitle());
 
-        $ids = [$siteRef => $site->id];
+        $ids = [$siteRef => $site->getId()];
 
         foreach ($places as $place) {
             $node = $this->graph->upsertNodeByRef(
@@ -119,7 +119,7 @@ final class SiteMapProjector
                 $place->nodeProperties(),
                 self::SOURCE,
             );
-            $ids[$place->ref] = $node->id;
+            $ids[$place->ref] = $node->getId();
         }
 
         $edges = 0;
@@ -168,13 +168,13 @@ final class SiteMapProjector
         $work = $this->existingWork($workTitle)
             ?? $this->graph->upsertNodeByRef(NodeKind::Org, $siteRef . ':org', $workTitle, [], self::SOURCE);
 
-        $this->graph->addEdge($work->id, $siteId, Relation::PART_OF, 100, self::SOURCE);
+        $this->graph->addEdge($work->getId(), $siteId, Relation::PART_OF, 100, self::SOURCE);
 
         // Without this the work floats: the person's own node is what makes the
         // rest of the world reachable from them.
         $self = $this->self();
         if ($self !== null) {
-            $this->graph->addEdge($self->id, $work->id, Relation::WORKS_ON, 100, self::SOURCE);
+            $this->graph->addEdge($self->getId(), $work->getId(), Relation::WORKS_ON, 100, self::SOURCE);
         }
     }
 
@@ -186,7 +186,7 @@ final class SiteMapProjector
         }
 
         foreach ($this->graph->graph(500, [NodeKind::Org, NodeKind::Project])['nodes'] as $node) {
-            $shared = array_intersect($wanted, self::stems($node->title));
+            $shared = array_intersect($wanted, self::stems($node->getTitle()));
 
             // Two shared stems is enough to recognise the same organisation and
             // strict enough that "музей" alone does not fuse two of them.
@@ -222,7 +222,7 @@ final class SiteMapProjector
     private function self(): ?Node
     {
         foreach ($this->graph->nodesByKind(NodeKind::Person) as $node) {
-            if (($node->properties['is_self'] ?? false) === true) {
+            if (($node->getProperties()['is_self'] ?? false) === true) {
                 return $node;
             }
         }
@@ -246,8 +246,8 @@ final class SiteMapProjector
         $stale = [];
 
         foreach ($this->graph->graph(1000, [NodeKind::Page, NodeKind::Collection])['nodes'] as $node) {
-            $ref = $node->ref;
-            if ($ref === null || $node->source !== self::SOURCE) {
+            $ref = $node->getRef();
+            if ($ref === null || $node->getSource() !== self::SOURCE) {
                 continue;
             }
             if (!str_starts_with($ref, $siteRef . ':')) {

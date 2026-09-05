@@ -58,7 +58,8 @@ final class ContentSaveHandler implements TypedHandlerInterface
     {
         $ref = trim($payload->getRef());
         $node = $ref === '' ? null : $this->graph->nodeByRef($ref);
-        $editorId = is_string($node?->properties['editor'] ?? null) ? (string) $node->properties['editor'] : '';
+        $declaredEditor = $node?->getProperties()['editor'] ?? null;
+        $editorId = is_string($declaredEditor) ? $declaredEditor : '';
         $editor = $editorId === '' ? $this->editorForRef($ref) : $this->surfaces->editor($editorId);
 
         if ($editor === null) {

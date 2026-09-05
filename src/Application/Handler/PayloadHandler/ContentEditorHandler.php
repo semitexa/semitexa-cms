@@ -46,7 +46,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
     {
         $ref = trim($payload->getRef());
         $node = $ref === '' ? null : $this->graph->nodeByRef($ref);
-        $properties = $node?->properties ?? [];
+        $properties = $node?->getProperties() ?? [];
 
         $html = match ($properties['opens'] ?? null) {
             'grid' => $this->grid($ref, (string) ($properties['source'] ?? ''), $payload->getPage()),
