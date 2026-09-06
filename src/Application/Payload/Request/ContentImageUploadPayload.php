@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Payload\Request;
 
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
+use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Http\UploadedFile;
@@ -24,7 +25,7 @@ use Semitexa\Core\Request;
     consumes: ['multipart/form-data'],
     produces: ['application/json'],
 )]
-final class ContentImageUploadPayload implements ValidatablePayloadInterface
+final class ContentImageUploadPayload implements ValidatablePayloadInterface, OsSurfacePayloadInterface
 {
     /** The field name Trix posts under; the client script sets it. */
     public const FIELD = 'file';
