@@ -6,11 +6,13 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
+use Semitexa\Cms\Application\Service\ContentHtmlSanitizer;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Cms\Application\Service\SeoDrain;
 use Semitexa\Cms\Application\Service\SeoStore;
 use Semitexa\Cms\Application\Service\TranslationQueue;
 use Semitexa\Cms\Domain\Model\ContentDraft;
+use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -54,6 +56,9 @@ final class ContentSaveHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected SeoDrain $seoDrain;
 
+    #[InjectAsReadonly]
+    protected ContentHtmlSanitizer $sanitizer;
+
     public function handle(ContentSavePayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
@@ -66,13 +71,33 @@ final class ContentSaveHandler implements TypedHandlerInterface
             return $this->html($resource, $this->page->renderMissing($ref));
         }
 
-        $error = null;
+        // What the record looks like BEFORE the write, because that is the only
+        // place the field kinds are declared — and the kinds decide which
+        // submitted values are markup. A ref that names nothing has no fields
+        // to judge by, so there is nothing to sanitise against and nothing to
+        // save into: fail closed rather than write unexamined markup.
+        $before = $editor->load($ref);
+        if ($before === null) {
+            return $this->html($resource, $this->page->renderMissing($ref));
+        }
+
+        // Nothing in the browser enforces `required` on these fields: the rich
+        // one is a hidden input, which is barred from constraint validation,
+        // and a form can be posted without ever loading our page anyway. This
+        // is the gate.
+        $error = self::missingRequired($before, $payload->submittedValues());
+
         try {
-            $editor->save($ref, $payload->submittedValues());
-            $this->queueTranslation($ref, $editor->editorId());
-            $saved = $editor->load($ref);
-            if ($saved !== null) {
-                $this->queueSeo($ref, $editor->editorId(), $saved);
+            if ($error === null) {
+                $editor->save($ref, $this->sanitizer->sanitizeValues(
+                    $payload->submittedValues(),
+                    self::htmlFieldNames($before),
+                ));
+                $this->queueTranslation($ref, $editor->editorId());
+                $saved = $editor->load($ref);
+                if ($saved !== null) {
+                    $this->queueSeo($ref, $editor->editorId(), $saved);
+                }
             }
         } catch (\InvalidArgumentException $e) {
             $error = $e->getMessage();
@@ -177,5 +202,72 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $token = $this->session->getPayload(CsrfToken::class);
 
         return $token->getValue();
+    }
+
+    /**
+     * The first required field the submission left empty, as a message.
+     *
+     * A required field absent from the submission counts as empty: the dialog
+     * posts every field it renders, so a missing name is a caller that decided
+     * not to send one, not a partial edit we should merge.
+     *
+     * @param array<string, string> $values
+     */
+    private static function missingRequired(ContentDraft $draft, array $values): ?string
+    {
+        foreach ($draft->fields as $field) {
+            if (!$field->required) {
+                continue;
+            }
+
+            if (!self::hasContent($values[$field->name] ?? '', $field->kind)) {
+                return 'Заповніть поле «' . $field->label . '».';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether a submitted value counts as filled in.
+     *
+     * Markup is judged by what it would show, not by its length: an empty Trix
+     * document still posts `<div><br></div>`, and `&nbsp;` is not text an
+     * author meant to write. A picture alone IS content, which is why an
+     * <img> counts even with no words around it.
+     */
+    private static function hasContent(string $value, string $kind): bool
+    {
+        if ($kind !== ContentField::HTML) {
+            return trim($value) !== '';
+        }
+
+        if (stripos($value, '<img') !== false) {
+            return true;
+        }
+
+        $text = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return trim(str_replace("\u{00A0}", ' ', $text)) !== '';
+    }
+
+    /**
+     * Names of the fields this editor declares as markup.
+     *
+     * Only these are sanitised: a LINE or TEXT field is plain text, and putting
+     * markup rules over it would eat a `<` an author legitimately typed.
+     *
+     * @return list<string>
+     */
+    private static function htmlFieldNames(ContentDraft $draft): array
+    {
+        $names = [];
+        foreach ($draft->fields as $field) {
+            if ($field->kind === ContentField::HTML) {
+                $names[] = $field->name;
+            }
+        }
+
+        return $names;
     }
 }
