@@ -25,8 +25,8 @@ final class ContentEditorPage
     {
         $fields = '';
         $rich = false;
-        foreach ($draft->fields as $field) {
-            $fields .= $this->field($field);
+        foreach ($draft->fields as $position => $field) {
+            $fields .= $this->field($field, (int) $position);
             $rich = $rich || $field->kind === ContentField::HTML;
         }
 
@@ -173,7 +173,7 @@ font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;
 HTML;
     }
 
-    private function field(ContentField $field): string
+    private function field(ContentField $field, int $position): string
     {
         $name = $this->escape($field->name);
         $label = $this->escape($field->label);
@@ -183,7 +183,7 @@ HTML;
 
         $control = match ($field->kind) {
             ContentField::LINE => '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>',
-            ContentField::HTML => $this->richControl($name, $value, $required),
+            ContentField::HTML => $this->richControl($name, $value, $required, $position),
             default => '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>',
         };
 
@@ -205,14 +205,24 @@ HTML;
      *
      * The input carries the value in both directions, so the field posts under
      * its own name exactly as the textarea did — nothing downstream learns that
-     * the control changed. `required` stays on the input rather than on
-     * <trix-editor>, which is not a form control the browser validates.
+     * the control changed.
+     *
+     * `required` is carried here for the record, not for enforcement: a hidden
+     * input is barred from constraint validation exactly as <trix-editor> is,
+     * so the browser checks neither. ContentSaveHandler is what actually
+     * refuses an empty required field, which is also the only place that can —
+     * a form can be posted without ever loading this page.
      */
-    private function richControl(string $escapedName, string $escapedValue, string $required): string
+    private function richControl(string $escapedName, string $escapedValue, string $required, int $position): string
     {
-        // The id is derived from the field name, which is an author-facing key
-        // and already escaped; the slug keeps it a valid id whatever it holds.
-        $id = 'rich-' . preg_replace('/[^A-Za-z0-9_-]/', '-', $escapedName);
+        // The id must be UNIQUE, not merely valid: Trix resolves its `input`
+        // attribute with getElementById, so two editors sharing an id would
+        // both write into the first hidden input and one field would silently
+        // overwrite the other. Field names are author-facing keys and nothing
+        // stops two of them slugging the same way («body.title», «body:title»),
+        // so the position — which cannot repeat within a draft — carries the
+        // uniqueness and the slug is only there to keep the id readable.
+        $id = 'rich-' . $position . '-' . preg_replace('/[^A-Za-z0-9_-]/', '-', $escapedName);
 
         return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '" value="' . $escapedValue . '"' . $required . '>'
             . '<trix-editor input="' . $id . '" class="rich"></trix-editor>';

@@ -31,7 +31,11 @@ use Semitexa\Core\Http\Response\ResourceResponse;
     path: '/os/app/cms/media/{assetId}',
     methods: ['GET'],
     responseWith: ResourceResponse::class,
-    produces: ['text/html'],
+    // What this route actually answers with: the stored image, or a redirect
+    // to it. Negotiation never runs here — it is gated on a render handle and
+    // this returns raw bytes — so the list is documentation of the contract
+    // rather than a gate, and «text/html» was simply untrue.
+    produces: ['image/jpeg', 'image/png', 'image/webp'],
 )]
 final class ContentImagePayload implements ValidatablePayloadInterface
 {

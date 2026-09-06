@@ -81,16 +81,23 @@ final class ContentSaveHandler implements TypedHandlerInterface
             return $this->html($resource, $this->page->renderMissing($ref));
         }
 
-        $error = null;
+        // Nothing in the browser enforces `required` on these fields: the rich
+        // one is a hidden input, which is barred from constraint validation,
+        // and a form can be posted without ever loading our page anyway. This
+        // is the gate.
+        $error = self::missingRequired($before, $payload->submittedValues());
+
         try {
-            $editor->save($ref, $this->sanitizer->sanitizeValues(
-                $payload->submittedValues(),
-                self::htmlFieldNames($before),
-            ));
-            $this->queueTranslation($ref, $editor->editorId());
-            $saved = $editor->load($ref);
-            if ($saved !== null) {
-                $this->queueSeo($ref, $editor->editorId(), $saved);
+            if ($error === null) {
+                $editor->save($ref, $this->sanitizer->sanitizeValues(
+                    $payload->submittedValues(),
+                    self::htmlFieldNames($before),
+                ));
+                $this->queueTranslation($ref, $editor->editorId());
+                $saved = $editor->load($ref);
+                if ($saved !== null) {
+                    $this->queueSeo($ref, $editor->editorId(), $saved);
+                }
             }
         } catch (\InvalidArgumentException $e) {
             $error = $e->getMessage();
@@ -195,6 +202,53 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $token = $this->session->getPayload(CsrfToken::class);
 
         return $token->getValue();
+    }
+
+    /**
+     * The first required field the submission left empty, as a message.
+     *
+     * A required field absent from the submission counts as empty: the dialog
+     * posts every field it renders, so a missing name is a caller that decided
+     * not to send one, not a partial edit we should merge.
+     *
+     * @param array<string, string> $values
+     */
+    private static function missingRequired(ContentDraft $draft, array $values): ?string
+    {
+        foreach ($draft->fields as $field) {
+            if (!$field->required) {
+                continue;
+            }
+
+            if (!self::hasContent($values[$field->name] ?? '', $field->kind)) {
+                return 'Заповніть поле «' . $field->label . '».';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether a submitted value counts as filled in.
+     *
+     * Markup is judged by what it would show, not by its length: an empty Trix
+     * document still posts `<div><br></div>`, and `&nbsp;` is not text an
+     * author meant to write. A picture alone IS content, which is why an
+     * <img> counts even with no words around it.
+     */
+    private static function hasContent(string $value, string $kind): bool
+    {
+        if ($kind !== ContentField::HTML) {
+            return trim($value) !== '';
+        }
+
+        if (stripos($value, '<img') !== false) {
+            return true;
+        }
+
+        $text = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return trim(str_replace("\u{00A0}", ' ', $text)) !== '';
     }
 
     /**

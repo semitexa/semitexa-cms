@@ -52,6 +52,21 @@ final class ContentHtmlSanitizer
      */
     private const IMAGE_SRC = '#^/os/app/cms/media/[A-Za-z0-9._~-]+$#';
 
+    /**
+     * The largest document a rich field may store, in bytes.
+     *
+     * HtmlSanitizer defends itself against pathological input by TRUNCATING at
+     * `maxInputLength` — 20 000 bytes by default — and saying nothing. An
+     * author writing a long article would have been told «Збережено.» while the
+     * tail of their text was cut off mid-tag, and only found out by reopening
+     * it. So the library's silent cut is turned off and a limit of our own is
+     * enforced here, where going over is an answer the author can read.
+     *
+     * 200 KB is a very long article: images are stored as references, not as
+     * data, so the markup carries roughly a paragraph per 400 bytes.
+     */
+    private const MAX_BYTES = 200_000;
+
     private ?HtmlSanitizer $sanitizer = null;
 
     /**
@@ -76,8 +91,21 @@ final class ContentHtmlSanitizer
         return $values;
     }
 
+    /**
+     * @throws \InvalidArgumentException when the document is over {@see self::MAX_BYTES}
+     */
     public function sanitize(string $html): string
     {
+        if (strlen($html) > self::MAX_BYTES) {
+            // Refused whole rather than stored in part: half an article saved
+            // under a success message is worse than a save that did not happen.
+            throw new \InvalidArgumentException(sprintf(
+                'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
+                (int) ceil(strlen($html) / 1024),
+                (int) (self::MAX_BYTES / 1024),
+            ));
+        }
+
         return $this->dropEmptyFigures($this->dropForeignImages($this->sanitizer()->sanitize($html)));
     }
 
@@ -159,7 +187,11 @@ final class ContentHtmlSanitizer
             // the path check below is then a second gate on the shape, not the
             // only thing standing between an article and a foreign host.
             ->allowRelativeMedias()
-            ->allowMediaSchemes([]);
+            ->allowMediaSchemes([])
+            // Never truncate. The library's default cuts at 20 000 bytes and
+            // returns the prefix as if it were the whole document; the size
+            // rule is enforced in sanitize(), where it can be reported.
+            ->withMaxInputLength(-1);
 
         return $this->sanitizer = new HtmlSanitizer($config);
     }

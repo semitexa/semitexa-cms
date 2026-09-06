@@ -187,4 +187,42 @@ final class ContentHtmlSanitizerTest extends TestCase
         self::assertSame('a < b & c', $out['title']);
         self::assertStringNotContainsString('script', $out['body']);
     }
+
+    /**
+     * HtmlSanitizer truncates at 20 000 bytes by default and returns the prefix
+     * as though it were the document — so a long article was saved cut off,
+     * mid-tag, under a «Збережено.» message. Nothing in the stored value would
+     * have told the author, and only reopening it would.
+     */
+    #[Test]
+    public function a_document_past_the_librarys_own_limit_survives_whole(): void
+    {
+        $paragraph = '<div>Музей у Львові має довгу історію.</div>';
+        $long = str_repeat($paragraph, 2000); // ~86 KB, well past 20 000
+
+        self::assertGreaterThan(20_000, strlen($long), 'the fixture must actually cross the default');
+
+        $clean = $this->sanitizer->sanitize($long);
+
+        self::assertSame(2000, substr_count($clean, '<div>'), 'every paragraph must come back');
+        self::assertStringEndsWith('</div>', $clean, 'and the end must not be a cut');
+    }
+
+    #[Test]
+    public function a_document_over_our_own_limit_is_refused_rather_than_trimmed(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/завелик/u');
+
+        $this->sanitizer->sanitize(str_repeat('a', 200_001));
+    }
+
+    /** The limit itself is allowed — a boundary that refuses at the number is a different limit. */
+    #[Test]
+    public function a_document_exactly_at_the_limit_is_accepted(): void
+    {
+        $filler = str_repeat('a', 200_000 - strlen('<div></div>'));
+
+        self::assertStringContainsString($filler, $this->sanitizer->sanitize('<div>' . $filler . '</div>'));
+    }
 }

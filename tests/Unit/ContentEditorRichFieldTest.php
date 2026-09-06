@@ -33,8 +33,8 @@ final class ContentEditorRichFieldTest extends TestCase
     {
         $html = $this->render([ContentField::html('body', 'Текст', '<p>Hi</p>')]);
 
-        self::assertStringContainsString('<input id="rich-body" type="hidden" name="body"', $html);
-        self::assertStringContainsString('<trix-editor input="rich-body"', $html);
+        self::assertStringContainsString('<input id="rich-0-body" type="hidden" name="body"', $html);
+        self::assertStringContainsString('<trix-editor input="rich-0-body"', $html);
     }
 
     /**
@@ -63,7 +63,7 @@ final class ContentEditorRichFieldTest extends TestCase
     {
         $html = $this->render([ContentField::html('body', 'Текст', '')]);
 
-        self::assertStringContainsString('<div class="field"><span>Текст</span><input id="rich-body"', $html);
+        self::assertStringContainsString('<div class="field"><span>Текст</span><input id="rich-0-body"', $html);
         self::assertStringNotContainsString('<label>', $html);
     }
 
@@ -104,8 +104,31 @@ final class ContentEditorRichFieldTest extends TestCase
     {
         $html = $this->render([ContentField::html('body', 'Текст', '', true)]);
 
-        self::assertMatchesRegularExpression('/<input id="rich-body"[^>]*\srequired>/', $html);
+        self::assertMatchesRegularExpression('/<input id="rich-0-body"[^>]*\srequired>/', $html);
         self::assertDoesNotMatchRegularExpression('/<trix-editor[^>]*\srequired/', $html);
+    }
+
+    /**
+     * Trix resolves its `input` attribute with getElementById, so two editors
+     * sharing an id both write into the first hidden input and one field eats
+     * the other. Field names slug lossily — «body.title» and «body:title» land
+     * on the same slug — so the id has to carry something that cannot repeat.
+     */
+    #[Test]
+    public function two_rich_fields_never_share_an_input_id(): void
+    {
+        $html = $this->render([
+            ContentField::html('body.title', 'Один', ''),
+            ContentField::html('body:title', 'Другий', ''),
+        ]);
+
+        preg_match_all('/<trix-editor input="([^"]+)"/', $html, $matches);
+
+        self::assertCount(2, $matches[1]);
+        self::assertSame($matches[1], array_unique($matches[1]), 'each editor must bind to its own input');
+        foreach ($matches[1] as $id) {
+            self::assertSame(1, substr_count($html, 'id="' . $id . '"'), 'and that input must be the only one');
+        }
     }
 
     /** @param list<ContentField> $fields */
