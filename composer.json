@@ -19,6 +19,8 @@
         "semitexa/scheduler": "*",
         "semitexa/os": "*",
         "semitexa/weave": "*",
+        "semitexa/ssr": "*",
+        "semitexa/media": "*",
         "symfony/html-sanitizer": "^7.0"
     },
     "require-dev": {
