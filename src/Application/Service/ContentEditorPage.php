@@ -79,7 +79,7 @@ final class ContentEditorPage
         $panelButton = '';
         if ($rest !== []) {
             $panelFields = '';
-            foreach ($rest as $position => $field) {
+            foreach ($rest as $field) {
                 $panelFields .= $this->field($field, self::positionOf($draft->fields, $field));
             }
             $panel = '<aside class="panel" id="panel" aria-label="Властивості">'
@@ -157,7 +157,10 @@ final class ContentEditorPage
   .tool .ghost{justify-self:start}
 
   @media (max-width:820px){
-    .panel{position:absolute;inset:46px 0 0 auto;width:min(340px,86vw);z-index:5;background:var(--bg);
+    /* Offset 0, not the 46px of .top: the containing block is .body, which
+       already begins below the bar, so a 46px inset counts its height twice
+       and opens a gap the canvas shows through. */
+    .panel{position:absolute;inset:0 0 0 auto;width:min(340px,86vw);z-index:5;background:var(--bg);
            box-shadow:-24px 0 48px rgba(2,8,23,.5)}
     .body{position:relative}
   }
@@ -343,12 +346,36 @@ font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;
 HTML;
     }
 
+    /**
+     * One field of the properties panel.
+     *
+     * `required` is announced but not enforced here, for the same reason
+     * {@see richControl()} does not enforce it: the browser cannot report a
+     * violation it is unable to show. This panel is `display:none` until the
+     * author opens it, and a hidden control is not focusable — so the browser
+     * refuses the submit, declines to focus anything, and says nothing. The
+     * Зберегти button simply stops working, with no message anywhere.
+     *
+     * MEASURED in Chrome on the rendered markup: with the panel closed,
+     * `form.reportValidity()` is false and `document.activeElement` is
+     * unchanged; with it open, the same call moves focus onto the offending
+     * field and shows its bubble. Only the second is a usable error.
+     *
+     * So `aria-required` carries the fact to assistive technology, and
+     * {@see ContentSaveHandler::missingRequired()} — which already walks every
+     * field of the draft, not just the rich one, and names the empty field in
+     * its message — stays the single gate. It has to be, regardless: a form can
+     * be posted without ever loading this page.
+     *
+     * The canvas keeps real `required` on its title input, because that control
+     * is always visible and the browser can point at it.
+     */
     private function field(ContentField $field, int $position): string
     {
         $name = $this->escape($field->name);
         $label = $this->escape($field->label);
         $value = $this->escape($field->value);
-        $required = $field->required ? ' required' : '';
+        $required = $field->required ? ' aria-required="true"' : '';
         $hint = $field->hint === '' ? '' : '<span class="hint">' . $this->escape($field->hint) . '</span>';
 
         $control = match ($field->kind) {
