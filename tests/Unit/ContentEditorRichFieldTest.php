@@ -57,22 +57,42 @@ final class ContentEditorRichFieldTest extends TestCase
      * <label> would then treat the toolbar's first button as its labelled
      * control and forward every click inside the field to it — clicking the
      * text you are writing would toggle bold. So the rich field is not a label.
+     *
+     * A rich field now renders in one of two places — the canvas, when it is
+     * the draft's body, or the properties panel, when a second one exists —
+     * and the toolbar goes into whichever wrapper it lands in. So both are
+     * pinned here rather than the one that happened to exist when the risk
+     * was found.
      */
     #[Test]
-    public function the_rich_field_is_not_wrapped_in_a_label(): void
+    public function no_rich_field_is_ever_wrapped_in_a_label(): void
     {
-        $html = $this->render([ContentField::html('body', 'Текст', '')]);
+        $onCanvas = $this->render([ContentField::html('body', 'Текст', '')]);
 
-        self::assertStringContainsString('<div class="field"><span>Текст</span><input id="rich-0-body"', $html);
-        self::assertStringNotContainsString('<label>', $html);
+        self::assertStringContainsString('<div class="writing">', $onCanvas);
+        self::assertStringContainsString('<trix-editor input="rich-0-body"', $onCanvas);
+        self::assertStringNotContainsString('<label>', $onCanvas);
+
+        // A second rich field cannot be the body, so it goes to the panel —
+        // the path through field(), which is where the label wrapper lives.
+        $inPanel = $this->render([
+            ContentField::html('body', 'Текст', ''),
+            ContentField::html('aside', 'Врізка', ''),
+        ]);
+
+        self::assertStringContainsString('<div class="field"><span>Врізка</span><input id="rich-1-aside"', $inPanel);
+        self::assertStringNotContainsString('<label>', $inPanel);
     }
 
     #[Test]
     public function a_plain_text_field_is_still_a_textarea(): void
     {
+        // A lone long-text field is the draft's body, so it is the canvas
+        // textarea rather than a panel one — same element, same name, same
+        // value; the class is what says where it is.
         $html = $this->render([ContentField::text('note', 'Нотатка', 'plain')]);
 
-        self::assertStringContainsString('<textarea name="note">plain</textarea>', $html);
+        self::assertStringContainsString('<textarea class="plain" name="note">plain</textarea>', $html);
         self::assertStringNotContainsString('trix-editor', $html);
     }
 

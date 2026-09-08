@@ -23,15 +23,17 @@ final class ContentEditorPage
 {
     public function render(ContentDraft $draft, string $csrfToken, ?string $savedMessage = null, ?string $error = null): string
     {
-        $fields = '';
-        $rich = false;
-        foreach ($draft->fields as $position => $field) {
-            $fields .= $this->field($field, (int) $position);
-            $rich = $rich || $field->kind === ContentField::HTML;
-        }
+        // Editing a page is writing, not filling in a form. So the draft is
+        // split by what the author is actually doing: the name of the thing,
+        // the thing itself, and the settings about it. Only the first two are
+        // on the canvas; everything else waits behind «Властивості» until it
+        // is asked for. A flat list of equal-weight fields makes the author
+        // decide, on every visit, which of them today's work is about.
+        [$titleField, $bodyField, $rest] = self::split($draft->fields);
 
-        // Only a draft that actually has a rich field pays for the editor.
+        $rich = $bodyField !== null && $bodyField->kind === ContentField::HTML;
         $richHead = $rich ? $this->richEditorHead() : '';
+        $shellJs = $this->escape(AssetManager::getUrl('js/content-shell.js', 'cms'));
 
         $title = $this->escape($draft->title);
         $ref = $this->escape($draft->ref);
@@ -39,14 +41,53 @@ final class ContentEditorPage
 
         $notice = '';
         if ($error !== null) {
-            $notice = '<p class="notice notice--bad">' . $this->escape($error) . '</p>';
+            $notice = '<p class="notice notice--bad" role="alert">' . $this->escape($error) . '</p>';
         } elseif ($savedMessage !== null) {
             $notice = '<p class="notice notice--ok">' . $this->escape($savedMessage) . '</p>';
         }
 
         $view = $draft->publicUrl === null || $draft->publicUrl === ''
             ? ''
-            : '<a class="view" href="' . $this->escape($draft->publicUrl) . '" target="_blank" rel="noopener">Подивитись на сайті ↗</a>';
+            : '<a class="ghost" href="' . $this->escape($draft->publicUrl) . '" target="_blank" rel="noopener">Подивитись&nbsp;↗</a>';
+
+        $titleControl = $titleField === null
+            ? ''
+            : '<input class="doctitle" type="text" name="' . $this->escape($titleField->name) . '"'
+                . ' value="' . $this->escape($titleField->value) . '"'
+                . ' placeholder="' . $this->escape($titleField->label) . '"'
+                . ' aria-label="' . $this->escape($titleField->label) . '"'
+                . ($titleField->required ? ' required' : '') . ' autocomplete="off">';
+
+        $bodyControl = '';
+        if ($bodyField !== null) {
+            $bodyControl = '<div class="writing">'
+                . ($rich
+                    ? $this->richControl(
+                        $this->escape($bodyField->name),
+                        $this->escape($bodyField->value),
+                        $bodyField->required ? ' required' : '',
+                        self::positionOf($draft->fields, $bodyField),
+                    )
+                    : '<textarea class="plain" name="' . $this->escape($bodyField->name) . '"'
+                        . ($bodyField->required ? ' required' : '') . '>' . $this->escape($bodyField->value) . '</textarea>')
+                . '</div>';
+        }
+
+        // The panel exists only when something belongs in it; a button that
+        // opens an empty drawer is worse than no button.
+        $panel = '';
+        $panelButton = '';
+        if ($rest !== []) {
+            $panelFields = '';
+            foreach ($rest as $field) {
+                $panelFields .= $this->field($field, self::positionOf($draft->fields, $field));
+            }
+            $panel = '<aside class="panel" id="panel" aria-label="Властивості">'
+                . '<div class="panel__head"><span>Властивості</span>'
+                . '<button class="icon" type="button" data-act="props" aria-label="Закрити">×</button></div>'
+                . '<div class="panel__body">' . $panelFields . '</div></aside>';
+            $panelButton = '<button class="ghost" type="button" data-act="props" aria-expanded="false" aria-controls="panel">Властивості</button>';
+        }
 
         return <<<HTML
 <!DOCTYPE html>
@@ -56,38 +97,170 @@ final class ContentEditorPage
 <style>
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);
-       display:flex;flex-direction:column}
-  .bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(var(--line-rgb),.18)}
-  .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .view{margin-left:auto;font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap}
-  form{flex:1;overflow:auto;padding:16px;display:grid;gap:14px;align-content:start}
-  label,.field{display:grid;gap:6px;font-size:12px;color:var(--mute)}
-  input,textarea{width:100%;padding:10px 12px;border-radius:9px;border:1px solid rgba(var(--line-rgb),.25);
-    background:rgba(var(--ink-rgb),.6);color:var(--strong);font-size:14px;font-family:inherit}
-  textarea{min-height:200px;line-height:1.6;resize:vertical}
-  input:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2)}
-  .hint{font-size:11px;color:var(--dim)}
-  .actions{position:sticky;bottom:0;display:flex;gap:10px;align-items:center;padding:12px 16px;
-    border-top:1px solid rgba(var(--line-rgb),.18);background:var(--bg)}
-  button{padding:10px 18px;border:none;border-radius:9px;background:var(--accent);color:#04121f;font-size:14px;font-weight:600;
-    font-family:inherit;cursor:pointer}
-  button:hover{filter:brightness(1.08)}
-  .notice{margin:0;padding:10px 16px;font-size:13px}
-  .notice--ok{color:var(--ok)} .notice--bad{color:var(--danger)}
+       font-size:14px;-webkit-font-smoothing:antialiased}
+  .doc{display:flex;flex-direction:column;height:100%}
+
+  /* --- the bar that never scrolls away: where you are, whether your work is
+         safe, and the two things you might want next --- */
+  .top{display:flex;align-items:center;gap:12px;flex:0 0 auto;padding:0 14px;height:46px;
+       border-bottom:1px solid rgba(var(--line-rgb),.16);background:var(--bg)}
+  .top__acts{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .state{font-size:12px;color:var(--dim);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .state::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+  .state[data-state="dirty"]{color:var(--warn)} .state[data-state="dirty"]::before{background:var(--warn)}
+  .state[data-state="saving"]{color:var(--dim)} .state[data-state="saving"]::before{background:var(--dim)}
+  button,.ghost{font-family:inherit;font-size:13px;border-radius:8px;cursor:pointer}
+  .ghost{padding:7px 12px;border:1px solid rgba(var(--line-rgb),.22);background:transparent;color:var(--text);
+         text-decoration:none;white-space:nowrap;transition:background 120ms,border-color 120ms}
+  .ghost:hover{background:rgba(var(--line-rgb),.12);border-color:rgba(var(--line-rgb),.36)}
+  .primary{padding:8px 16px;border:none;background:var(--accent);color:#04121f;font-weight:600}
+  .primary:hover{filter:brightness(1.08)}
+  .icon{border:none;background:transparent;color:var(--mute);font-size:18px;line-height:1;padding:2px 6px}
+  .icon:hover{color:var(--strong)}
+
+  .notice{margin:0;padding:9px 16px;font-size:13px;flex:0 0 auto}
+  .notice--ok{color:var(--ok);background:rgba(94,234,212,.08)}
+  .notice--bad{color:var(--danger);background:rgba(255,107,130,.10)}
+
+  .body{flex:1;min-height:0;display:flex}
+
+  /* --- the canvas: one column, the width of something readable --- */
+  .canvas{flex:1;min-width:0;overflow:auto;padding:28px 32px 64px}
+  .canvas>*{max-width:760px;margin-inline:auto}
+  .doctitle{display:block;width:100%;border:none;background:transparent;color:var(--strong);
+    font-family:inherit;font-size:29px;font-weight:650;letter-spacing:-.02em;line-height:1.25;padding:0 0 10px}
+  .doctitle::placeholder{color:var(--dim)}
+  .doctitle:focus{outline:none}
+  .writing{margin-top:6px}
+  textarea.plain{width:100%;min-height:60vh;padding:0;border:none;background:transparent;color:var(--text);
+    font-family:inherit;font-size:16px;line-height:1.7;resize:none}
+  textarea.plain:focus{outline:none}
+
+  /* --- properties: present, but not in the way --- */
+  .panel{flex:0 0 320px;border-left:1px solid rgba(var(--line-rgb),.16);background:rgba(var(--ink-rgb),.35);
+         display:none;flex-direction:column;min-height:0}
+  body.props .panel{display:flex}
+  .panel__head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;
+    font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+    border-bottom:1px solid rgba(var(--line-rgb),.14)}
+  .panel__body{flex:1;overflow:auto;padding:14px;display:grid;gap:16px;align-content:start}
+  .panel label,.panel .field{display:grid;gap:6px;font-size:12px;color:var(--mute)}
+  .panel input,.panel textarea{width:100%;padding:9px 11px;border-radius:8px;
+    border:1px solid rgba(var(--line-rgb),.25);background:rgba(var(--ink-rgb),.6);color:var(--strong);
+    font-size:13px;font-family:inherit}
+  .panel textarea{min-height:88px;line-height:1.55;resize:vertical}
+  .panel input:focus,.panel textarea:focus{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18)}
+  .hint{font-size:11px;color:var(--dim);line-height:1.5}
+  .tool{display:grid;gap:8px;font-size:12px;color:var(--mute);padding-top:4px;
+        border-top:1px solid rgba(var(--line-rgb),.14)}
+  .tool .ghost{justify-self:start}
+
+  @media (max-width:820px){
+    /* Offset 0, not the 46px of .top: the containing block is .body, which
+       already begins below the bar, so a 46px inset counts its height twice
+       and opens a gap the canvas shows through. */
+    .panel{position:absolute;inset:0 0 0 auto;width:min(340px,86vw);z-index:5;background:var(--bg);
+           box-shadow:-24px 0 48px rgba(2,8,23,.5)}
+    .body{position:relative}
+  }
+
   :root{color-scheme:dark;--bg:#0f172a;--text:#dbe7ff;--strong:#eaf2ff;--mute:#a8b4cc;--dim:#6f7d99;
-    --line-rgb:148,163,184;--ink-rgb:2,8,23;--accent:#37b7ff;--accent-rgb:55,183,255;--ok:#5eead4;--danger:#ff6b82}
-</style></head>
+    --line-rgb:148,163,184;--ink-rgb:2,8,23;--accent:#37b7ff;--accent-rgb:55,183,255;
+    --ok:#5eead4;--warn:#f5c451;--danger:#ff6b82}
+</style>
+<script src="{$shellJs}" defer{$this->nonceAttr()}></script>
+</head>
 <body>
-  <div class="bar"><h1>{$title}</h1>{$view}</div>
-  {$notice}
-  <form method="post" action="/os/app/cms/save">
+  <form class="doc" method="post" action="/os/app/cms/save" data-editor>
     <input type="hidden" name="ref" value="{$ref}">
     <input type="hidden" name="_csrf" value="{$token}">
-    {$fields}
-    <div class="actions"><button type="submit">Зберегти</button></div>
+
+    <header class="top">
+      <span class="state" id="state" data-state="clean" aria-live="polite">Збережено</span>
+      <span class="top__acts">{$view}{$panelButton}<button class="primary" type="submit">Зберегти</button></span>
+    </header>
+    {$notice}
+
+    <div class="body">
+      <main class="canvas">
+        {$titleControl}
+        {$bodyControl}
+      </main>
+      {$panel}
+    </div>
   </form>
 </body></html>
 HTML;
+    }
+
+    /**
+     * Split a draft into the name, the thing, and everything else.
+     *
+     * The rule is about kinds, not names, so it holds for any editor: the
+     * first single-line field is what the record is called, the first rich
+     * field — or failing that the first long-text one — is the record itself.
+     * A draft that fits neither shape simply puts everything in the panel,
+     * which is still a readable screen rather than a broken one.
+     *
+     * @param  list<ContentField> $fields
+     * @return array{0: ?ContentField, 1: ?ContentField, 2: list<ContentField>}
+     */
+    private static function split(array $fields): array
+    {
+        $title = null;
+        $body = null;
+
+        foreach ($fields as $field) {
+            if ($title === null && $field->kind === ContentField::LINE) {
+                $title = $field;
+                continue;
+            }
+            if ($body === null && $field->kind === ContentField::HTML) {
+                $body = $field;
+            }
+        }
+
+        if ($body === null) {
+            foreach ($fields as $field) {
+                if ($field !== $title && $field->kind === ContentField::TEXT) {
+                    $body = $field;
+                    break;
+                }
+            }
+        }
+
+        $rest = [];
+        foreach ($fields as $field) {
+            if ($field !== $title && $field !== $body) {
+                $rest[] = $field;
+            }
+        }
+
+        return [$title, $body, $rest];
+    }
+
+    /**
+     * Where a field sits in the draft — the number {@see richControl()} folds
+     * into its element id, which must stay unique across the whole draft even
+     * though the fields are now rendered in three separate places.
+     *
+     * @param list<ContentField> $fields
+     */
+    private static function positionOf(array $fields, ContentField $needle): int
+    {
+        foreach ($fields as $position => $field) {
+            if ($field === $needle) {
+                return (int) $position;
+            }
+        }
+
+        return 0;
+    }
+
+    private function nonceAttr(): string
+    {
+        return ScriptNonceSource::attribute();
     }
 
     /**
@@ -173,12 +346,36 @@ font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;
 HTML;
     }
 
+    /**
+     * One field of the properties panel.
+     *
+     * `required` is announced but not enforced here, for the same reason
+     * {@see richControl()} does not enforce it: the browser cannot report a
+     * violation it is unable to show. This panel is `display:none` until the
+     * author opens it, and a hidden control is not focusable — so the browser
+     * refuses the submit, declines to focus anything, and says nothing. The
+     * Зберегти button simply stops working, with no message anywhere.
+     *
+     * MEASURED in Chrome on the rendered markup: with the panel closed,
+     * `form.reportValidity()` is false and `document.activeElement` is
+     * unchanged; with it open, the same call moves focus onto the offending
+     * field and shows its bubble. Only the second is a usable error.
+     *
+     * So `aria-required` carries the fact to assistive technology, and
+     * {@see ContentSaveHandler::missingRequired()} — which already walks every
+     * field of the draft, not just the rich one, and names the empty field in
+     * its message — stays the single gate. It has to be, regardless: a form can
+     * be posted without ever loading this page.
+     *
+     * The canvas keeps real `required` on its title input, because that control
+     * is always visible and the browser can point at it.
+     */
     private function field(ContentField $field, int $position): string
     {
         $name = $this->escape($field->name);
         $label = $this->escape($field->label);
         $value = $this->escape($field->value);
-        $required = $field->required ? ' required' : '';
+        $required = $field->required ? ' aria-required="true"' : '';
         $hint = $field->hint === '' ? '' : '<span class="hint">' . $this->escape($field->hint) . '</span>';
 
         $control = match ($field->kind) {
@@ -253,16 +450,36 @@ HTML;
         // block so a draft with no rich field carries none of it.
         $skin = <<<CSS
 <style>
-  trix-toolbar .trix-button-group{border-color:rgba(var(--line-rgb),.25);margin-bottom:6px}
-  trix-toolbar .trix-button{background:rgba(var(--ink-rgb),.6);border-bottom:none;color:var(--strong)}
-  trix-toolbar .trix-button:not(:disabled):hover{background:rgba(var(--line-rgb),.18)}
-  trix-toolbar .trix-button.trix-active{background:var(--accent);color:#04121f}
-  trix-toolbar .trix-button:disabled{opacity:.35}
-  trix-editor.rich{min-height:220px;line-height:1.6;padding:10px 12px;border-radius:9px;
-    border:1px solid rgba(var(--line-rgb),.25);background:rgba(var(--ink-rgb),.6);color:var(--strong);font-size:14px}
-  trix-editor.rich:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2)}
+  /* The toolbar rides with the text rather than sitting in a box of its own:
+     it is a property of the writing surface, not another field. */
+  trix-toolbar{position:sticky;top:0;z-index:2;background:var(--bg);padding:2px 0 8px;margin-bottom:2px}
+  trix-toolbar .trix-button-group{border:none;margin:0 10px 0 0}
+  trix-toolbar .trix-button{background:transparent;border:none;width:30px;height:30px;border-radius:7px}
+  trix-toolbar .trix-button:not(:disabled):hover{background:rgba(var(--line-rgb),.16)}
+  trix-toolbar .trix-button.trix-active{background:rgba(var(--accent-rgb),.18)}
+  trix-toolbar .trix-button:disabled{opacity:.25}
+  /* Trix draws each icon as a dark SVG on ::before, sized for the light
+     toolbar it ships with. On a dark surface that is dark on dark — the
+     buttons look empty. Inverting the glyph is what makes them visible;
+     without it the whole toolbar reads as broken. */
+  trix-toolbar .trix-button--icon::before{filter:invert(1);opacity:.72}
+  trix-toolbar .trix-button--icon:hover::before{opacity:1}
+  trix-toolbar .trix-button.trix-active::before{opacity:1}
+  trix-toolbar .trix-dialog{background:var(--bg);border:1px solid rgba(var(--line-rgb),.28);border-radius:10px;
+    box-shadow:0 18px 44px rgba(2,8,23,.55)}
+  trix-toolbar .trix-input--dialog{background:rgba(var(--ink-rgb),.6);border:1px solid rgba(var(--line-rgb),.25);
+    color:var(--strong);border-radius:7px;padding:8px 10px;font-family:inherit}
+  trix-toolbar .trix-button--dialog{background:var(--accent);color:#04121f;border-radius:7px;border:none;padding:7px 12px}
+
+  /* The writing surface itself: no frame, because the frame is the window. */
+  trix-editor.rich{min-height:58vh;line-height:1.7;font-size:16px;padding:0;border:none;background:transparent;
+    color:var(--text)}
+  trix-editor.rich:focus{outline:none;box-shadow:none}
+  trix-editor.rich h1{font-size:22px;font-weight:650;letter-spacing:-.015em;color:var(--strong);margin:1.4em 0 .5em}
   trix-editor.rich a{color:var(--accent)}
-  trix-editor.rich blockquote{border-left:2px solid rgba(var(--line-rgb),.4);margin:0;padding-left:12px;color:var(--mute)}
+  trix-editor.rich blockquote{border-left:2px solid rgba(var(--line-rgb),.4);margin:0;padding-left:14px;color:var(--mute)}
+  trix-editor.rich ul,trix-editor.rich ol{padding-left:1.3em}
+  trix-editor.rich img{max-width:100%;height:auto;border-radius:8px}
 </style>
 CSS;
 
