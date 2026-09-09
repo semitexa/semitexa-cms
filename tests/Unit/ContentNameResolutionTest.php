@@ -7,6 +7,7 @@ namespace Semitexa\Cms\Tests\Unit;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Handler\PayloadHandler\ContentEditorHandler;
+use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Weave\Domain\Enum\NodeKind;
@@ -140,6 +141,56 @@ final class ContentNameResolutionTest extends TestCase
         $handler = $this->handlerOver([$this->node('regmus:page:7', 'Контакти')]);
 
         $this->assertNull($this->resolve($handler, ''));
+    }
+
+    #[Test]
+    public function opening_with_nothing_chosen_offers_the_map_instead_of_blaming_a_deletion(): void
+    {
+        // The empty state used to say "можливо, запис видалено" here. Nothing
+        // had been asked for — the dialog was simply raised before anything was
+        // chosen — so it accused the author of removing a record they had never
+        // named.
+        $handler = $this->handlerOver([
+            $this->node('regmus:page:7', 'Контакти'),
+            $this->node('regmus:events', 'Події', NodeKind::Collection),
+        ]);
+        (new \ReflectionProperty(ContentEditorHandler::class, 'page'))->setValue($handler, new ContentEditorPage());
+
+        $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
+
+        $this->assertStringNotContainsString('видалено', $html);
+        $this->assertStringContainsString('/os/app/cms?ref=regmus%3Apage%3A7', $html);
+        $this->assertStringContainsString('/os/app/cms?ref=regmus%3Aevents', $html);
+    }
+
+    #[Test]
+    public function a_site_with_no_map_is_told_how_to_build_one(): void
+    {
+        $handler = $this->handlerOver([]);
+        (new \ReflectionProperty(ContentEditorHandler::class, 'page'))->setValue($handler, new ContentEditorPage());
+
+        $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
+
+        $this->assertStringNotContainsString('видалено', $html);
+        $this->assertStringContainsString('cms:map:build', $html);
+    }
+
+    #[Test]
+    public function only_a_ref_that_names_nothing_may_suggest_a_deletion(): void
+    {
+        $page = new ContentEditorPage();
+
+        // A ref resolving to nothing really can be a removed record.
+        $this->assertStringContainsString('видалено', $page->renderMissing('regmus:page:404'));
+
+        // A name that matches nothing is usually a name this site never used.
+        // Saying the work may have been deleted because someone typed
+        // "Contacts" instead of "Kontakty" is the same accusation relocated.
+        $notFound = $page->renderNameNotFound('кулінарія');
+        $this->assertStringNotContainsString('видалено', $notFound);
+        $this->assertStringContainsString('кулінарія', $notFound);
+
+        $this->assertStringNotContainsString('видалено', $page->renderNothingChosen());
     }
 
     #[Test]

@@ -333,16 +333,66 @@ HTML;
 HTML;
     }
 
+    /**
+     * A ref that names nothing.
+     *
+     * The deletion hint belongs HERE and only here: something was asked for by
+     * name or by ref and could not be found, which really is what a removed
+     * record looks like. It used to be shown when nothing had been asked for at
+     * all, so opening the editor with no ref told the author a record they never
+     * named might have been deleted — an accusation out of thin air.
+     */
     public function renderMissing(string $ref): string
     {
-        $ref = $this->escape($ref);
+        return $this->emptyState(
+            'Немає чого відкрити для «' . $this->escape($ref) . '».',
+            'Можливо, запис видалено — оновіть карту.',
+        );
+    }
 
+    /**
+     * Nothing was asked for.
+     *
+     * Not an error and not a deletion: the editor was opened without a place,
+     * which is what happens when a dialog is raised before anything is chosen.
+     * The map is the action — {@see ContentEditorHandler} renders it as a
+     * chooser when it has one, and this is the fallback for a site that has
+     * none yet.
+     */
+    public function renderNothingChosen(): string
+    {
+        return $this->emptyState(
+            'Оберіть, що відкрити.',
+            'Ця консоль показує сторінки і списки з карти сайту. Її ще не побудовано — <code>cms:map:build</code>.',
+        );
+    }
+
+    /**
+     * A name nobody on the map is called.
+     *
+     * Distinct from {@see renderMissing()} on purpose. A ref that resolves to
+     * nothing may well be a deleted record; a NAME that matches nothing is
+     * usually just a name this site never used, and telling the author their
+     * work may have been deleted because they said "Contacts" instead of
+     * "Kontakty" is the same accusation in a different place.
+     */
+    public function renderNameNotFound(string $name): string
+    {
+        return $this->emptyState(
+            'Не знайшов нічого з назвою «' . $this->escape($name) . '».',
+            'Попросіть перелік вмісту, щоб побачити, що тут є.',
+        );
+    }
+
+    private function emptyState(string $headline, string $hint): string
+    {
         return <<<HTML
 <!DOCTYPE html>
 <html lang="uk"><head><meta charset="UTF-8"><title>—</title>
 <style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0f172a;color:#a8b4cc;
-font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;padding:24px}</style></head>
-<body><div>Немає чого відкрити для «{$ref}».<br>Можливо, запис видалено — оновіть карту.</div></body></html>
+font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;padding:24px}
+code{background:#1e293b;padding:1px 5px;border-radius:3px;color:#cbd5e1}</style></head>
+<body><div>{$headline}<br>{$hint}</div></body></html>
 HTML;
     }
 

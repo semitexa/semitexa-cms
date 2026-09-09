@@ -67,10 +67,10 @@ final class ContentEditorHandler implements TypedHandlerInterface
             } elseif ($named instanceof ContentRows) {
                 return $this->html($resource, $this->page->renderRows($named, ''));
             } else {
-                // The empty state has to name what was looked for. "Немає чого
-                // відкрити для «»" is the bug this task started from: it told
-                // the person nothing about what the assistant had tried.
-                return $this->html($resource, $this->page->renderMissing($name));
+                // Names the thing that was looked for, and does NOT suggest it
+                // was deleted — a name this site never used is the ordinary
+                // case, and a deletion hint here reads as an accusation.
+                return $this->html($resource, $this->page->renderNameNotFound($name));
             }
         }
 
@@ -173,8 +173,11 @@ final class ContentEditorHandler implements TypedHandlerInterface
 
     private function editorForRef(string $ref): string
     {
+        // Nothing was asked for. Offer the map instead of an apology: this is
+        // what a dialog raised before anything is chosen looks like, and the
+        // author is one click from where they were going.
         if ($ref === '') {
-            return $this->page->renderMissing($ref);
+            return $this->chooseAPlace();
         }
 
         foreach ($this->surfaces->editors() as $editor) {
@@ -185,6 +188,37 @@ final class ContentEditorHandler implements TypedHandlerInterface
         }
 
         return $this->page->renderMissing($ref);
+    }
+
+    /**
+     * Every place on the map, as the same list a collection opens.
+     *
+     * The empty state used to say "можливо, запис видалено" here, which accused
+     * the author of removing a record they had never named — the editor had
+     * simply been opened with nothing to open.
+     */
+    private function chooseAPlace(): string
+    {
+        $rows = [];
+        foreach ($this->graph->graph(self::NAME_SCAN_LIMIT, [NodeKind::Page, NodeKind::Collection])['nodes'] as $node) {
+            if (!$node instanceof Node || ($node->getRef() ?? '') === '') {
+                continue;
+            }
+            $rows[] = new ContentRow(
+                ref: (string) $node->getRef(),
+                title: $node->getTitle(),
+                meta: [$node->getKind() === NodeKind::Collection ? 'список' : 'сторінка'],
+            );
+        }
+
+        if ($rows === []) {
+            return $this->page->renderNothingChosen();
+        }
+
+        return $this->page->renderRows(
+            new ContentRows('Що відкрити?', $rows, count($rows), 1, count($rows)),
+            '',
+        );
     }
 
     private function grid(string $ref, string $source, int $pageNumber): string
