@@ -7,7 +7,7 @@ namespace Semitexa\Cms\Application\Payload\Request;
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
-use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
+use Semitexa\Os\Domain\Contract\OsContentSurfaceInterface;
 
 /**
  * A place on the map, opened in a console dialog.
@@ -22,7 +22,7 @@ use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
     responseWith: ResourceResponse::class,
     produces: ['text/html'],
 )]
-final class ContentEditorPayload implements ValidatablePayloadInterface, OsSurfacePayloadInterface
+final class ContentEditorPayload implements ValidatablePayloadInterface, OsContentSurfaceInterface
 {
     /** The place, as the map names it: 'regmus:page:3' or 'regmus:events'. */
     private string $ref = '';
