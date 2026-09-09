@@ -153,6 +153,21 @@ final class ContentListSkillTest extends TestCase
     }
 
     #[Test]
+    public function a_page_past_the_end_is_not_reported_as_an_empty_collection(): void
+    {
+        // Caught by running it: asking for page 2 of a four-record collection
+        // answered "has no records yet", which is the assistant stating
+        // something false about the site. Empty and past-the-end are different
+        // facts, and a planner asks for page 2 of 1 easily.
+        $rows = new ContentRows('Статті', [], total: 4, page: 2, perPage: 20);
+
+        $this->assertSame(
+            '"Статті" has 4 record(s) on 1 page(s); there is no page 2.',
+            $this->render('renderRows', $rows, ''),
+        );
+    }
+
+    #[Test]
     public function search_is_case_insensitive_because_a_person_is_typing(): void
     {
         $out = $this->render('renderMap', [$this->museum()], 'VISITING');

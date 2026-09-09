@@ -179,9 +179,18 @@ final class ContentListSkill implements InvocableSkillInterface
             ));
 
         if ($matched === []) {
-            return $search === ''
+            if ($search !== '') {
+                return "Nothing on page {$rows->page} of \"{$rows->title}\" matches \"{$search}\".";
+            }
+
+            // Empty and past-the-end are different facts. Saying "no records
+            // yet" about a collection that holds four of them is the assistant
+            // stating something false about the site, which is worse than
+            // saying nothing — and asking for page 2 of 1 is an easy thing for
+            // a planner to do.
+            return $rows->total === 0
                 ? "\"{$rows->title}\" has no records yet."
-                : "Nothing on page {$rows->page} of \"{$rows->title}\" matches \"{$search}\".";
+                : "\"{$rows->title}\" has {$rows->total} record(s) on {$rows->pages()} page(s); there is no page {$rows->page}.";
         }
 
         $lines = [$rows->title . ' — page ' . $rows->page . ' of ' . $rows->pages() . ', ' . $rows->total . ' record(s) in all.'];
