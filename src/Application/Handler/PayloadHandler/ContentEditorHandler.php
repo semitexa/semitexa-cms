@@ -14,7 +14,11 @@ use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Csrf\CsrfToken;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Session\SessionInterface;
+use Semitexa\Cms\Domain\Model\ContentRow;
+use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
+use Semitexa\Weave\Domain\Enum\NodeKind;
+use Semitexa\Weave\Domain\Model\Node;
 
 /**
  * Opens a place on the map: a page as its editor, a collection as its list.
@@ -42,9 +46,34 @@ final class ContentEditorHandler implements TypedHandlerInterface
 
     private const PER_PAGE = 25;
 
+    /**
+     * How far a name is looked for. The map is a dozen places per site, not a
+     * table dump, so this is a ceiling against a runaway projection rather than
+     * a paging limit anyone should hit.
+     */
+    private const NAME_SCAN_LIMIT = 500;
+
     public function handle(ContentEditorPayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
+
+        // A name only ever stands in for a missing ref. A ref is exact; a name
+        // is a guess, and the guess must never override the certainty.
+        $name = trim($payload->getName());
+        if ($ref === '' && $name !== '') {
+            $named = $this->resolveName($name);
+            if (is_string($named)) {
+                $ref = $named;
+            } elseif ($named instanceof ContentRows) {
+                return $this->html($resource, $this->page->renderRows($named, ''));
+            } else {
+                // The empty state has to name what was looked for. "Немає чого
+                // відкрити для «»" is the bug this task started from: it told
+                // the person nothing about what the assistant had tried.
+                return $this->html($resource, $this->page->renderMissing($name));
+            }
+        }
+
         $node = $ref === '' ? null : $this->graph->nodeByRef($ref);
         $properties = $node?->getProperties() ?? [];
 
@@ -59,9 +88,78 @@ final class ContentEditorHandler implements TypedHandlerInterface
             default => $this->editorForRef($ref),
         };
 
+        return $this->html($resource, $html);
+    }
+
+    private function html(ResourceResponse $resource, string $html): ResourceResponse
+    {
         return $resource
             ->setContent($html)
             ->setHeader('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
+     * Turn a name a person said into the place they meant.
+     *
+     * Three answers, because "the page called Contacts" has three honest
+     * outcomes and collapsing them loses the one that matters:
+     *
+     *  - a ref (string) when exactly one place is meant, and the caller carries
+     *    on as though a ref had been asked for;
+     *  - {@see ContentRows} when several places could be meant — rendered as the
+     *    same list a collection opens, so every candidate is one click away
+     *    rather than the person having to guess again in different words;
+     *  - null when the name resolves to nothing, leaving the empty state to say
+     *    so.
+     *
+     * An exact title wins outright: a site with 'Contacts' and 'Contacts (old)'
+     * must not force a choice on someone who named one of them precisely.
+     *
+     * @return string|ContentRows|null
+     */
+    private function resolveName(string $name): string|ContentRows|null
+    {
+        if ($name === '') {
+            return null;
+        }
+
+        $exact = [];
+        $partial = [];
+
+        foreach ($this->graph->graph(self::NAME_SCAN_LIMIT, [NodeKind::Page, NodeKind::Collection])['nodes'] as $node) {
+            if (!$node instanceof Node || ($node->getRef() ?? '') === '') {
+                continue;
+            }
+            $title = $node->getTitle();
+            if (mb_strtolower($title) === mb_strtolower($name)) {
+                $exact[] = $node;
+            } elseif (mb_stripos($title, $name) !== false) {
+                $partial[] = $node;
+            }
+        }
+
+        $matches = $exact !== [] ? $exact : $partial;
+
+        if ($matches === []) {
+            return null;
+        }
+        if (count($matches) === 1) {
+            return (string) $matches[0]->getRef();
+        }
+
+        return new ContentRows(
+            title: 'Що з цього відкрити?',
+            rows: array_map(
+                static fn(Node $node): ContentRow => new ContentRow(
+                    ref: (string) $node->getRef(),
+                    title: $node->getTitle(),
+                    meta: [$node->getKind() === NodeKind::Collection ? 'список' : 'сторінка'],
+                ),
+                $matches,
+            ),
+            total: count($matches),
+            perPage: count($matches),
+        );
     }
 
     private function editor(string $ref, string $editorId): string
