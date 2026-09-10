@@ -7,6 +7,7 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 use Semitexa\Cms\Application\Payload\Request\ContentEditorPayload;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
+use Semitexa\Cms\Domain\Contract\ContentCreatorInterface;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -231,7 +232,11 @@ final class ContentEditorHandler implements TypedHandlerInterface
 
         $rows = $collection->rows(ContentSurfaceRegistry::filtersOf($source), $pageNumber, self::PER_PAGE);
 
-        return $this->page->renderRows($rows, $ref);
+        return $this->page->renderRows(
+            $rows,
+            $ref,
+            $collection instanceof ContentCreatorInterface ? $this->csrfToken() : '',
+        );
     }
 
     private function csrfToken(): string

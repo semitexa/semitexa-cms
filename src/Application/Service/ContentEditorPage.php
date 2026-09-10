@@ -270,10 +270,24 @@ HTML;
      * no bulk actions. A grid whose rows are half-editable is a grid where it
      * is never clear which half you are in.
      */
-    public function renderRows(ContentRows $rows, string $ref): string
+    /**
+     * @param string $csrfToken non-empty only when the module can author into
+     *        this collection; the affordance appears exactly where the
+     *        capability does, so an author is never offered a button that
+     *        answers with a refusal.
+     */
+    public function renderRows(ContentRows $rows, string $ref, string $csrfToken = ''): string
     {
         $title = $this->escape($rows->title);
         $count = $rows->total;
+
+        $create = '';
+        if ($csrfToken !== '' && $ref !== '') {
+            $create = '<form class="new" method="post" action="/os/app/cms/create">'
+                . '<input type="hidden" name="ref" value="' . $this->escape($ref) . '">'
+                . '<input type="hidden" name="_csrf" value="' . $this->escape($csrfToken) . '">'
+                . '<button type="submit">+ Новий запис</button></form>';
+        }
 
         $items = '';
         foreach ($rows->rows as $row) {
@@ -310,6 +324,10 @@ HTML;
        display:flex;flex-direction:column}
   .bar{display:flex;align-items:baseline;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(var(--line-rgb),.18)}
   .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong)}
+  .new{margin-left:auto}
+  .new button{font:inherit;font-size:12px;padding:5px 11px;border-radius:6px;cursor:pointer;
+              border:1px solid rgba(var(--line-rgb),.35);background:transparent;color:var(--strong)}
+  .new button:hover{background:rgba(var(--line-rgb),.12)}
   .bar .count{font-size:12px;color:var(--dim)}
   .list{flex:1;overflow:auto;padding:6px 0}
   .row{display:flex;flex-direction:column;gap:3px;padding:11px 16px;text-decoration:none;color:inherit;
@@ -326,7 +344,7 @@ HTML;
     --line-rgb:148,163,184;--accent:#37b7ff}
 </style></head>
 <body>
-  <div class="bar"><h1>{$title}</h1><span class="count">{$count}</span></div>
+  <div class="bar"><h1>{$title}</h1><span class="count">{$count}</span>{$create}</div>
   <div class="list">{$items}</div>
   {$pager}
 </body></html>
@@ -381,6 +399,29 @@ HTML;
         return $this->emptyState(
             'Не знайшов нічого з назвою «' . $this->escape($name) . '».',
             'Попросіть перелік вмісту, щоб побачити, що тут є.',
+        );
+    }
+
+    /** The module lists these records and does not author them. */
+    public function renderCannotCreate(string $ref): string
+    {
+        return $this->emptyState(
+            'Тут не можна створити запис.',
+            'Список «' . $this->escape($ref) . '» показує записи, які веде інший модуль.',
+        );
+    }
+
+    /**
+     * The module refused, or created something nothing can open.
+     *
+     * The module's own message is shown rather than swallowed: it is the only
+     * party that knows why, and an author told "не вдалося" learns nothing.
+     */
+    public function renderCreateFailed(string $ref, string $why): string
+    {
+        return $this->emptyState(
+            'Не вдалося створити запис у «' . $this->escape($ref) . '».',
+            $this->escape($why),
         );
     }
 
