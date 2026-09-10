@@ -152,6 +152,21 @@ final class ContentEditorPage
   .panel input:focus,.panel textarea:focus{outline:none;border-color:var(--accent);
     box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18)}
   .hint{font-size:11px;color:var(--dim);line-height:1.5}
+  .cover__frame{display:grid;place-items:center;min-height:104px;border-radius:8px;overflow:hidden;
+                border:1px dashed rgba(148,163,184,.35);background:rgba(148,163,184,.06)}
+  .cover__img{display:block;width:100%;max-height:220px;object-fit:cover}
+  .cover__empty{font-size:11px;color:var(--dim)}
+  .cover__acts{display:flex;gap:8px;align-items:center}
+  .cover__pick,.cover__clear{font:inherit;font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;
+                             border:1px solid rgba(148,163,184,.35);background:transparent;color:var(--text)}
+  /* Reachable by keyboard, invisible to the eye — `hidden` would remove it from
+     the tab order and the label is not focusable in its place. */
+  .cover__file{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+               clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  .cover__pick{position:relative}
+  .cover__pick:focus-within{outline:2px solid rgba(148,163,184,.7);outline-offset:2px}
+  .cover__clear{border-color:rgba(248,113,113,.4);color:#fca5a5}
+  .cover__err{font-size:11px;color:#fca5a5}
   .tool{display:grid;gap:8px;font-size:12px;color:var(--mute);padding-top:4px;
         border-top:1px solid rgba(var(--line-rgb),.14)}
   .tool .ghost{justify-self:start}
@@ -270,81 +285,6 @@ HTML;
      * no bulk actions. A grid whose rows are half-editable is a grid where it
      * is never clear which half you are in.
      */
-    public function renderRows(ContentRows $rows, string $ref): string
-    {
-        $title = $this->escape($rows->title);
-        $count = $rows->total;
-
-        $items = '';
-        foreach ($rows->rows as $row) {
-            $meta = $row->meta === [] ? '' : '<span class="meta">' . $this->escape(implode(' · ', $row->meta)) . '</span>';
-            $items .= '<a class="row" href="/os/app/cms?ref=' . rawurlencode($row->ref) . '">'
-                . '<span class="row__title">' . $this->escape($row->title !== '' ? $row->title : 'Без назви') . '</span>'
-                . $meta . '</a>';
-        }
-
-        if ($items === '') {
-            $items = '<p class="empty">Тут поки порожньо.</p>';
-        }
-
-        $pager = '';
-        if ($rows->pages() > 1) {
-            $base = '/os/app/cms?ref=' . rawurlencode($ref) . '&page=';
-            $prev = $rows->hasPrevious()
-                ? '<a class="page" href="' . $base . ($rows->page - 1) . '">← Назад</a>'
-                : '<span class="page page--off">← Назад</span>';
-            $next = $rows->hasNext()
-                ? '<a class="page" href="' . $base . ($rows->page + 1) . '">Далі →</a>'
-                : '<span class="page page--off">Далі →</span>';
-            $pager = '<div class="pager">' . $prev
-                . '<span class="page-of">' . $rows->page . ' / ' . $rows->pages() . '</span>' . $next . '</div>';
-        }
-
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{$title}</title>
-<style>
-  *{box-sizing:border-box} html,body{margin:0;height:100%}
-  body{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);
-       display:flex;flex-direction:column}
-  .bar{display:flex;align-items:baseline;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(var(--line-rgb),.18)}
-  .bar h1{margin:0;font-size:14px;font-weight:600;color:var(--strong)}
-  .bar .count{font-size:12px;color:var(--dim)}
-  .list{flex:1;overflow:auto;padding:6px 0}
-  .row{display:flex;flex-direction:column;gap:3px;padding:11px 16px;text-decoration:none;color:inherit;
-       border-bottom:1px solid rgba(var(--line-rgb),.10)}
-  .row:hover{background:rgba(var(--line-rgb),.08)}
-  .row__title{font-size:14px;color:var(--strong)}
-  .meta{font-size:11px;color:var(--dim)}
-  .empty{padding:24px 16px;font-size:13px;color:var(--dim)}
-  .pager{display:flex;align-items:center;gap:14px;padding:10px 16px;border-top:1px solid rgba(var(--line-rgb),.18);font-size:12px}
-  .page{color:var(--accent);text-decoration:none}
-  .page--off{color:var(--dim)}
-  .page-of{margin-left:auto;color:var(--dim)}
-  :root{color-scheme:dark;--bg:#0f172a;--text:#dbe7ff;--strong:#eaf2ff;--dim:#6f7d99;
-    --line-rgb:148,163,184;--accent:#37b7ff}
-</style></head>
-<body>
-  <div class="bar"><h1>{$title}</h1><span class="count">{$count}</span></div>
-  <div class="list">{$items}</div>
-  {$pager}
-</body></html>
-HTML;
-    }
-
-    public function renderMissing(string $ref): string
-    {
-        $ref = $this->escape($ref);
-
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><title>—</title>
-<style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0f172a;color:#a8b4cc;
-font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;padding:24px}</style></head>
-<body><div>Немає чого відкрити для «{$ref}».<br>Можливо, запис видалено — оновіть карту.</div></body></html>
-HTML;
-    }
 
     /**
      * One field of the properties panel.
@@ -381,6 +321,9 @@ HTML;
         $control = match ($field->kind) {
             ContentField::LINE => '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
+            // The RAW id: imageControl() escapes it itself, and escaping twice
+            // posts 'a&b' back as 'a&amp;b' — the value changes on every save.
+            ContentField::IMAGE => $this->imageControl($name, $field->previewUrl(), $field->value, $required),
             default => '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>',
         };
 
@@ -390,11 +333,48 @@ HTML;
         // button the labelled control, so clicking the editor body pressed
         // «Bold» instead of placing the caret. The rich field gets a plain
         // wrapper; the others keep the label they are correctly paired with.
-        if ($field->kind === ContentField::HTML) {
+        // Same reason as the rich field: the control an author clicks is not a
+        // labelable element, so a <label> would forward the click somewhere
+        // surprising.
+        if ($field->kind === ContentField::HTML || $field->kind === ContentField::IMAGE) {
             return '<div class="field"><span>' . $label . '</span>' . $control . $hint . '</div>';
         }
 
         return '<label>' . $label . $control . $hint . '</label>';
+    }
+
+    /**
+     * The cover control: a preview, a file input, and a way to take it off.
+     *
+     * The hidden input is what posts — it carries the ASSET ID, and clearing
+     * sets it to the empty string rather than removing it, because a field that
+     * vanishes from the post is a field the module cannot tell apart from one
+     * nobody touched. That is the difference between "leave the picture" and
+     * "take the picture off", and the contract says an image field arrives
+     * empty when cleared.
+     *
+     * The file input uploads through the route that already exists and hands
+     * back an id; nothing about the storage layout reaches this page.
+     */
+    private function imageControl(string $name, string $previewUrl, string $assetId, string $required): string
+    {
+        $has = $assetId !== '';
+        $preview = '<img class="cover__img" src="' . $previewUrl . '" alt=""' . ($has ? '' : ' hidden') . '>';
+        $empty = '<span class="cover__empty"' . ($has ? ' hidden' : '') . '>Немає зображення</span>';
+
+        return '<div class="cover" data-cover="' . $name . '">'
+            . '<input type="hidden" name="' . $name . '" value="' . $this->escape($assetId) . '"' . $required . '>'
+            . '<div class="cover__frame">' . $preview . $empty . '</div>'
+            . '<div class="cover__acts">'
+            // Visually hidden rather than `hidden`: the attribute takes the input
+            // out of the tab order, and the label around it is not focusable
+            // either, so a keyboard-only author could not choose an image at all.
+            . '<label class="cover__pick"><input type="file" accept="image/*" class="cover__file">'
+            . '<span>' . ($has ? 'Замінити' : 'Вибрати зображення') . '</span></label>'
+            . '<button type="button" class="cover__clear"' . ($has ? '' : ' hidden') . '>Прибрати</button>'
+            . '</div>'
+            . '<span class="cover__err" hidden></span>'
+            . '</div>';
     }
 
     /**

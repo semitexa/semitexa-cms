@@ -7,7 +7,7 @@ namespace Semitexa\Cms\Application\Payload\Request;
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
-use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
+use Semitexa\Os\Domain\Contract\OsContentSurfaceInterface;
 
 /**
  * A place on the map, opened in a console dialog.
@@ -22,13 +22,23 @@ use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
     responseWith: ResourceResponse::class,
     produces: ['text/html'],
 )]
-final class ContentEditorPayload implements ValidatablePayloadInterface, OsSurfacePayloadInterface
+final class ContentEditorPayload implements ValidatablePayloadInterface, OsContentSurfaceInterface
 {
     /** The place, as the map names it: 'regmus:page:3' or 'regmus:events'. */
     private string $ref = '';
 
     /** Which page of a collection; ignored by an editor. */
     private int $page = 1;
+
+    /**
+     * A place named the way a person says it — 'Contacts' — instead of by ref.
+     *
+     * Chat is where this comes from: a planner is told the page's name, not its
+     * ref, and asking a person to know 'regmus:page:7' would make the console
+     * the only way in. Resolved against the map by the handler; a ref always
+     * wins, because it is exact and a name is a guess.
+     */
+    private string $name = '';
 
     public function getPage(): int
     {
@@ -54,5 +64,15 @@ final class ContentEditorPayload implements ValidatablePayloadInterface, OsSurfa
     public function setRef(string $ref): void
     {
         $this->ref = $ref;
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function setName(string $name): void
+    {
+        $this->name = $name;
     }
 }

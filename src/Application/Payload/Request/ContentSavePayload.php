@@ -8,7 +8,7 @@ use Semitexa\Authorization\Attribute\AsProtectedPayload;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Request;
-use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
+use Semitexa\Os\Domain\Contract\OsContentSurfaceInterface;
 
 /**
  * Submitted edits for one record.
@@ -24,7 +24,7 @@ use Semitexa\Os\Domain\Contract\OsSurfacePayloadInterface;
     consumes: ['application/x-www-form-urlencoded'],
     produces: ['text/html'],
 )]
-final class ContentSavePayload implements ValidatablePayloadInterface, OsSurfacePayloadInterface
+final class ContentSavePayload implements ValidatablePayloadInterface, OsContentSurfaceInterface
 {
     private string $ref = '';
 

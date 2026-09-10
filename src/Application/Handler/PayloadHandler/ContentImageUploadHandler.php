@@ -6,6 +6,7 @@ namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentImageUploadPayload;
 use Semitexa\Cms\Application\Service\ContentImageCollection;
+use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Core\Attribute\AsPayloadHandler;
 use Semitexa\Core\Attribute\InjectAsMutable;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -64,8 +65,12 @@ final class ContentImageUploadHandler implements TypedHandlerInterface
             ]);
         }
 
+        // The id as well as the URL: markup embeds the URL, and an image FIELD
+        // stores the id — the console route resolves one from the other, and
+        // spelling that rule out twice is how the two would drift.
         return $this->json($resource, HttpStatus::Ok->value, [
-            'url' => '/os/app/cms/media/' . rawurlencode($reference->assetId),
+            'assetId' => $reference->assetId,
+            'url' => ContentField::image('preview', '', $reference->assetId)->previewUrl(),
         ]);
     }
 
