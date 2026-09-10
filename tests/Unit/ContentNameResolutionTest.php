@@ -12,6 +12,7 @@ use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Weave\Domain\Enum\NodeKind;
 use Semitexa\Weave\Domain\Model\Node;
+use Semitexa\Testing\Traits\BuildsContainerManagedObjects;
 
 /**
  * "Open Contacts" has to reach the page called Contacts.
@@ -25,6 +26,8 @@ use Semitexa\Weave\Domain\Model\Node;
  */
 final class ContentNameResolutionTest extends TestCase
 {
+    use BuildsContainerManagedObjects;
+
     private function node(string $ref, string $title, NodeKind $kind = NodeKind::Page): Node
     {
         return new Node(
@@ -68,10 +71,7 @@ final class ContentNameResolutionTest extends TestCase
             public function counts(): array { return ['nodes' => count($this->nodes), 'edges' => 0]; }
         };
 
-        $handler = (new \ReflectionClass(ContentEditorHandler::class))->newInstanceWithoutConstructor();
-        (new \ReflectionProperty(ContentEditorHandler::class, 'graph'))->setValue($handler, $graph);
-
-        return $handler;
+        return $this->createWithDependencies(ContentEditorHandler::class, ['graph' => $graph]);
     }
 
     private function resolve(ContentEditorHandler $handler, string $name): string|ContentRows|null
