@@ -56,12 +56,16 @@ final class ContentNameResolutionTest extends TestCase
             public function node(string $id): ?Node { return null; }
             public function nodesByKind(NodeKind $kind, int $limit = 0): array { return []; }
             public function search(string $term, int $limit = 20): array { return []; }
-            public function neighborhood(string $nodeId): array { return ['nodes' => [], 'edges' => []]; }
+            // The contract is {node, edges, neighbors} — not the {nodes, edges}
+            // shape graph() and subgraph() return. A fake that answers with the
+            // wrong keys is a fake that would keep passing after the real store
+            // changed, which is the one thing it exists not to do.
+            public function neighborhood(string $nodeId): array { return ['node' => null, 'edges' => [], 'neighbors' => []]; }
             public function subgraph(string $nodeId, int $depth = 1): array { return ['nodes' => [], 'edges' => []]; }
             public function mergeNodes(string $keepId, string $dropId): void {}
             public function removeNode(string $id): void {}
             public function removeEdge(string $id): void {}
-            public function counts(): array { return []; }
+            public function counts(): array { return ['nodes' => count($this->nodes), 'edges' => 0]; }
         };
 
         $handler = (new \ReflectionClass(ContentEditorHandler::class))->newInstanceWithoutConstructor();
