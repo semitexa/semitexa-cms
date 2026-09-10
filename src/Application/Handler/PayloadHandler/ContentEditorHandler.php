@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentEditorPayload;
+use Semitexa\Cms\Application\Service\ContentAnswerPage;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Cms\Domain\Contract\ContentCreatorInterface;
@@ -46,6 +47,9 @@ final class ContentEditorHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected ContentEditorPage $page;
 
+    #[InjectAsReadonly]
+    protected ContentAnswerPage $answers;
+
     private const PER_PAGE = 25;
 
     /**
@@ -67,12 +71,12 @@ final class ContentEditorHandler implements TypedHandlerInterface
             if (is_string($named)) {
                 $ref = $named;
             } elseif ($named instanceof ContentRows) {
-                return $this->html($resource, $this->page->renderRows($named, ''));
+                return $this->html($resource, $this->answers->renderRows($named, ''));
             } else {
                 // Names the thing that was looked for, and does NOT suggest it
                 // was deleted — a name this site never used is the ordinary
                 // case, and a deletion hint here reads as an accusation.
-                return $this->html($resource, $this->page->renderNameNotFound($name));
+                return $this->html($resource, $this->answers->renderNameNotFound($name));
             }
         }
 
@@ -169,7 +173,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
         $draft = $editorId === '' ? null : $this->surfaces->editor($editorId)?->load($ref);
 
         return $draft === null
-            ? $this->page->renderMissing($ref)
+            ? $this->answers->renderMissing($ref)
             : $this->page->render($draft, $this->csrfToken());
     }
 
@@ -189,7 +193,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
             }
         }
 
-        return $this->page->renderMissing($ref);
+        return $this->answers->renderMissing($ref);
     }
 
     /**
@@ -214,10 +218,10 @@ final class ContentEditorHandler implements TypedHandlerInterface
         }
 
         if ($rows === []) {
-            return $this->page->renderNothingChosen();
+            return $this->answers->renderNothingChosen();
         }
 
-        return $this->page->renderRows(
+        return $this->answers->renderRows(
             new ContentRows('Що відкрити?', $rows, count($rows), 1, count($rows)),
             '',
         );
@@ -228,7 +232,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
         $collection = $source === '' ? null : $this->surfaces->collection($source);
 
         if ($collection === null) {
-            return $this->page->renderMissing($ref);
+            return $this->answers->renderMissing($ref);
         }
 
         $rows = $collection->rows(ContentSurfaceRegistry::filtersOf($source), $pageNumber, self::PER_PAGE);
@@ -238,7 +242,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
         $canCreate = $collection instanceof ContentCreatorInterface;
         $canRemove = $collection instanceof ContentRemoverInterface;
 
-        return $this->page->renderRows(
+        return $this->answers->renderRows(
             $rows,
             $ref,
             $canCreate || $canRemove ? $this->csrfToken() : '',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentCreatePayload;
+use Semitexa\Cms\Application\Service\ContentAnswerPage;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Cms\Domain\Contract\ContentCreatorInterface;
@@ -45,13 +46,16 @@ final class ContentCreateHandler implements TypedHandlerInterface
     #[InjectAsReadonly]
     protected ContentEditorPage $page;
 
+    #[InjectAsReadonly]
+    protected ContentAnswerPage $answers;
+
     public function handle(ContentCreatePayload $payload, ResourceResponse $resource): ResourceResponse
     {
         $ref = trim($payload->getRef());
         $properties = $this->graph->nodeByRef($ref)?->getProperties() ?? [];
 
         if (($properties['opens'] ?? null) !== 'grid') {
-            return $this->html($resource, $this->page->renderMissing($ref));
+            return $this->html($resource, $this->answers->renderMissing($ref));
         }
 
         $source = (string) ($properties['source'] ?? '');
@@ -60,7 +64,7 @@ final class ContentCreateHandler implements TypedHandlerInterface
         if (!$collection instanceof ContentCreatorInterface) {
             // The module lists these records and does not author them. Saying so
             // beats a blank editor the author cannot save.
-            return $this->html($resource, $this->page->renderCannotCreate($ref));
+            return $this->html($resource, $this->answers->renderCannotCreate($ref));
         }
 
         try {
@@ -69,11 +73,11 @@ final class ContentCreateHandler implements TypedHandlerInterface
             // show back.
             $created = trim($collection->create(ContentSurfaceRegistry::filtersOf($source)));
         } catch (\RuntimeException $e) {
-            return $this->html($resource, $this->page->renderCreateFailed($ref, $e->getMessage()));
+            return $this->html($resource, $this->answers->renderCreateFailed($ref, $e->getMessage()));
         }
 
         if ($created === '') {
-            return $this->html($resource, $this->page->renderCreateFailed($ref, 'The module created a record without a ref.'));
+            return $this->html($resource, $this->answers->renderCreateFailed($ref, 'The module created a record without a ref.'));
         }
 
         $draft = $this->surfaces->editor((string) ($properties['editor'] ?? ''))?->load($created);
@@ -89,7 +93,7 @@ final class ContentCreateHandler implements TypedHandlerInterface
             $draft === null
                 // Created, but nothing can open it. Not silent: the record
                 // exists and the author has to be told where it went.
-                ? $this->page->renderCreateFailed($created, 'The record was created, but no editor answers for it.')
+                ? $this->answers->renderCreateFailed($created, 'The record was created, but no editor answers for it.')
                 : $this->page->render($draft, $this->csrfToken()),
         );
     }

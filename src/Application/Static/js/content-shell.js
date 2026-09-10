@@ -79,5 +79,93 @@
     if (act.dataset.act === 'props') { event.preventDefault(); toggleProps(); }
   });
 
+  // --- the cover image ----------------------------------------------------
+  //
+  // An enhancement over a control that already posts: the hidden input carries
+  // the asset id, so with this file blocked the field still submits whatever it
+  // was loaded with. What is added is choosing a new one and taking one off.
+  //
+  // Clearing writes an EMPTY STRING rather than removing the input. A field
+  // that vanishes from the post is a field the module cannot tell apart from
+  // one nobody touched — which is the difference between "leave the picture"
+  // and "take the picture off".
+
+  var UPLOAD_URL = '/os/app/cms/media';
+  var ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
+
+  function csrfToken() {
+    var input = form.querySelector('input[name="_csrf"]');
+    return input ? input.value : '';
+  }
+
+  function coverShow(cover, assetId, url) {
+    var hidden = cover.querySelector('input[type="hidden"]');
+    var img = cover.querySelector('.cover__img');
+    var empty = cover.querySelector('.cover__empty');
+    var clear = cover.querySelector('.cover__clear');
+    var pick = cover.querySelector('.cover__pick');
+    var has = !!assetId;
+
+    if (hidden) { hidden.value = assetId; }
+    if (img) { img.hidden = !has; if (has && url) { img.src = url; } }
+    if (empty) { empty.hidden = has; }
+    if (clear) { clear.hidden = !has; }
+    // The label is the only affordance when there is nothing yet, so it has to
+    // say which of the two things it does.
+    if (pick) { pick.lastChild.nodeValue = has ? 'Замінити' : 'Вибрати зображення'; }
+    markDirty();
+  }
+
+  function coverFail(cover, message) {
+    var err = cover.querySelector('.cover__err');
+    if (!err) { return; }
+    err.textContent = message;
+    err.hidden = false;
+  }
+
+  form.addEventListener('change', function (event) {
+    var input = event.target;
+    if (!input.matches || !input.matches('.cover__pick input[type="file"]')) { return; }
+
+    var cover = input.closest('.cover');
+    var file = input.files && input.files[0];
+    input.value = '';
+    if (!cover || !file) { return; }
+
+    var err = cover.querySelector('.cover__err');
+    if (err) { err.hidden = true; }
+
+    // Checked here so an obvious mistake costs nothing; the ingest checks the
+    // BYTES, which is the check that decides.
+    if (ACCEPTED.indexOf(file.type) === -1) {
+      coverFail(cover, 'Можна додавати лише зображення: JPEG, PNG або WebP.');
+      return;
+    }
+
+    var data = new FormData();
+    data.append('file', file);
+    data.append('_csrf', csrfToken());
+
+    fetch(UPLOAD_URL, { method: 'POST', body: data, headers: { 'Accept': 'application/json' } })
+      .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+      .then(function (result) {
+        if (!result.ok || !result.body || !result.body.assetId) {
+          // The server says which collection refused it and why — wrong format,
+          // too large, over quota — and the author is standing there waiting.
+          coverFail(cover, (result.body && result.body.error) || 'Не вдалося зберегти зображення.');
+          return;
+        }
+        coverShow(cover, result.body.assetId, result.body.url);
+      })
+      .catch(function () { coverFail(cover, 'Не вдалося зберегти зображення.'); });
+  });
+
+  form.addEventListener('click', function (event) {
+    var button = event.target.closest ? event.target.closest('.cover__clear') : null;
+    if (!button) { return; }
+    event.preventDefault();
+    coverShow(button.closest('.cover'), '', '');
+  });
+
   setState('clean');
 })();

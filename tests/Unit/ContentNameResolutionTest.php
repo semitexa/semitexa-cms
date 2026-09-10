@@ -7,7 +7,7 @@ namespace Semitexa\Cms\Tests\Unit;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Handler\PayloadHandler\ContentEditorHandler;
-use Semitexa\Cms\Application\Service\ContentEditorPage;
+use Semitexa\Cms\Application\Service\ContentAnswerPage;
 use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Weave\Domain\Enum\NodeKind;
@@ -154,7 +154,7 @@ final class ContentNameResolutionTest extends TestCase
             $this->node('regmus:page:7', 'Контакти'),
             $this->node('regmus:events', 'Події', NodeKind::Collection),
         ]);
-        (new \ReflectionProperty(ContentEditorHandler::class, 'page'))->setValue($handler, new ContentEditorPage());
+        (new \ReflectionProperty(ContentEditorHandler::class, 'answers'))->setValue($handler, new ContentAnswerPage());
 
         $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
 
@@ -167,7 +167,7 @@ final class ContentNameResolutionTest extends TestCase
     public function a_site_with_no_map_is_told_how_to_build_one(): void
     {
         $handler = $this->handlerOver([]);
-        (new \ReflectionProperty(ContentEditorHandler::class, 'page'))->setValue($handler, new ContentEditorPage());
+        (new \ReflectionProperty(ContentEditorHandler::class, 'answers'))->setValue($handler, new ContentAnswerPage());
 
         $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
 
@@ -178,19 +178,19 @@ final class ContentNameResolutionTest extends TestCase
     #[Test]
     public function only_a_ref_that_names_nothing_may_suggest_a_deletion(): void
     {
-        $page = new ContentEditorPage();
+        $answers = new ContentAnswerPage();
 
         // A ref resolving to nothing really can be a removed record.
-        $this->assertStringContainsString('видалено', $page->renderMissing('regmus:page:404'));
+        $this->assertStringContainsString('видалено', $answers->renderMissing('regmus:page:404'));
 
         // A name that matches nothing is usually a name this site never used.
         // Saying the work may have been deleted because someone typed
         // "Contacts" instead of "Kontakty" is the same accusation relocated.
-        $notFound = $page->renderNameNotFound('кулінарія');
+        $notFound = $answers->renderNameNotFound('кулінарія');
         $this->assertStringNotContainsString('видалено', $notFound);
         $this->assertStringContainsString('кулінарія', $notFound);
 
-        $this->assertStringNotContainsString('видалено', $page->renderNothingChosen());
+        $this->assertStringNotContainsString('видалено', $answers->renderNothingChosen());
     }
 
     #[Test]

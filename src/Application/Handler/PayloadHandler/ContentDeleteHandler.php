@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentDeletePayload;
-use Semitexa\Cms\Application\Service\ContentEditorPage;
+use Semitexa\Cms\Application\Service\ContentAnswerPage;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
 use Semitexa\Cms\Domain\Contract\ContentRemoverInterface;
 use Semitexa\Cms\Domain\Model\ContentRow;
@@ -49,7 +49,7 @@ final class ContentDeleteHandler implements TypedHandlerInterface
     protected ContentSurfaceRegistry $surfaces;
 
     #[InjectAsReadonly]
-    protected ContentEditorPage $page;
+    protected ContentAnswerPage $answers;
 
     public function handle(ContentDeletePayload $payload, ResourceResponse $resource): ResourceResponse
     {
@@ -57,7 +57,7 @@ final class ContentDeleteHandler implements TypedHandlerInterface
         $collectionRef = trim($payload->getCollection());
 
         if ($this->graph->nodeByRef($ref) !== null) {
-            return $this->html($resource, $this->page->renderCannotRemove(
+            return $this->html($resource, $this->answers->renderCannotRemove(
                 $ref,
                 'Це сторінка на карті сайту. Її прибирає модуль, який її туди поставив.',
             ));
@@ -65,14 +65,14 @@ final class ContentDeleteHandler implements TypedHandlerInterface
 
         $properties = $this->graph->nodeByRef($collectionRef)?->getProperties() ?? [];
         if (($properties['opens'] ?? null) !== 'grid') {
-            return $this->html($resource, $this->page->renderMissing($collectionRef));
+            return $this->html($resource, $this->answers->renderMissing($collectionRef));
         }
 
         $source = (string) ($properties['source'] ?? '');
         $collection = $source === '' ? null : $this->surfaces->collection($source);
 
         if (!$collection instanceof ContentRemoverInterface) {
-            return $this->html($resource, $this->page->renderCannotRemove(
+            return $this->html($resource, $this->answers->renderCannotRemove(
                 $ref,
                 'Цей список веде модуль, який не дозволяє прибирати записи звідси.',
             ));
@@ -81,7 +81,7 @@ final class ContentDeleteHandler implements TypedHandlerInterface
         $filters = ContentSurfaceRegistry::filtersOf($source);
 
         if (!$payload->isConfirmed()) {
-            return $this->html($resource, $this->page->renderConfirmRemoval(
+            return $this->html($resource, $this->answers->renderConfirmRemoval(
                 $ref,
                 $this->titleOf($collection, $filters, $ref) ?? $ref,
                 $collectionRef,
@@ -92,12 +92,12 @@ final class ContentDeleteHandler implements TypedHandlerInterface
         try {
             $collection->remove($ref);
         } catch (\RuntimeException $e) {
-            return $this->html($resource, $this->page->renderCannotRemove($ref, $e->getMessage()));
+            return $this->html($resource, $this->answers->renderCannotRemove($ref, $e->getMessage()));
         }
 
         // Back to the list it came from, which is also the proof: the row is
         // gone from the same screen the author was looking at.
-        return $this->html($resource, $this->page->renderRows(
+        return $this->html($resource, $this->answers->renderRows(
             $collection->rows($filters, 1, self::PER_PAGE),
             $collectionRef,
             $this->csrfToken(),

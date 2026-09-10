@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Handler\PayloadHandler;
 
 use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
+use Semitexa\Cms\Application\Service\ContentAnswerPage;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\ContentHtmlSanitizer;
 use Semitexa\Cms\Application\Service\ContentSurfaceRegistry;
@@ -47,6 +48,9 @@ final class ContentSaveHandler implements TypedHandlerInterface
     protected ContentEditorPage $page;
 
     #[InjectAsReadonly]
+    protected ContentAnswerPage $answers;
+
+    #[InjectAsReadonly]
     protected TranslationQueue $translations;
 
     #[InjectAsReadonly]
@@ -68,7 +72,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $editor = $editorId === '' ? $this->editorForRef($ref) : $this->surfaces->editor($editorId);
 
         if ($editor === null) {
-            return $this->html($resource, $this->page->renderMissing($ref));
+            return $this->html($resource, $this->answers->renderMissing($ref));
         }
 
         // What the record looks like BEFORE the write, because that is the only
@@ -78,7 +82,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         // save into: fail closed rather than write unexamined markup.
         $before = $editor->load($ref);
         if ($before === null) {
-            return $this->html($resource, $this->page->renderMissing($ref));
+            return $this->html($resource, $this->answers->renderMissing($ref));
         }
 
         // Nothing in the browser enforces `required` on these fields: the rich
@@ -111,7 +115,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         $draft = $editor->load($ref);
 
         if ($draft === null) {
-            return $this->html($resource, $this->page->renderMissing($ref));
+            return $this->html($resource, $this->answers->renderMissing($ref));
         }
 
         return $this->html($resource, $this->page->render(

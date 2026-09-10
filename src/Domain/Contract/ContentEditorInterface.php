@@ -27,6 +27,13 @@ interface ContentEditorInterface
      *
      * @param array<string, string> $values Keyed by field name; fields the editor
      *        did not declare are the caller's noise and must be ignored.
+     *
+     *        An IMAGE field arrives as a media asset id, and as an EMPTY STRING
+     *        when the author cleared it — which is a value, not an omission, and
+     *        a module that skips empties will make the picture un-removable.
+     *        Store the id; never a URL. The console route resolves one when
+     *        something renders, so moving the storage does not invalidate what
+     *        was written (see {@see \Semitexa\Cms\Domain\Model\ContentField::IMAGE}).
      * @throws \InvalidArgumentException when the values cannot make a valid record
      */
     public function save(string $ref, array $values): void;
