@@ -159,6 +159,12 @@ final class ContentEditorPage
   .cover__acts{display:flex;gap:8px;align-items:center}
   .cover__pick,.cover__clear{font:inherit;font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;
                              border:1px solid rgba(148,163,184,.35);background:transparent;color:var(--text)}
+  /* Reachable by keyboard, invisible to the eye — `hidden` would remove it from
+     the tab order and the label is not focusable in its place. */
+  .cover__file{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+               clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  .cover__pick{position:relative}
+  .cover__pick:focus-within{outline:2px solid rgba(148,163,184,.7);outline-offset:2px}
   .cover__clear{border-color:rgba(248,113,113,.4);color:#fca5a5}
   .cover__err{font-size:11px;color:#fca5a5}
   .tool{display:grid;gap:8px;font-size:12px;color:var(--mute);padding-top:4px;
@@ -315,7 +321,9 @@ HTML;
         $control = match ($field->kind) {
             ContentField::LINE => '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
-            ContentField::IMAGE => $this->imageControl($name, $field->previewUrl(), $value, $required),
+            // The RAW id: imageControl() escapes it itself, and escaping twice
+            // posts 'a&b' back as 'a&amp;b' — the value changes on every save.
+            ContentField::IMAGE => $this->imageControl($name, $field->previewUrl(), $field->value, $required),
             default => '<textarea name="' . $name . '"' . $required . '>' . $value . '</textarea>',
         };
 
@@ -358,8 +366,11 @@ HTML;
             . '<input type="hidden" name="' . $name . '" value="' . $this->escape($assetId) . '"' . $required . '>'
             . '<div class="cover__frame">' . $preview . $empty . '</div>'
             . '<div class="cover__acts">'
-            . '<label class="cover__pick"><input type="file" accept="image/*" hidden>'
-            . ($has ? 'Замінити' : 'Вибрати зображення') . '</label>'
+            // Visually hidden rather than `hidden`: the attribute takes the input
+            // out of the tab order, and the label around it is not focusable
+            // either, so a keyboard-only author could not choose an image at all.
+            . '<label class="cover__pick"><input type="file" accept="image/*" class="cover__file">'
+            . '<span>' . ($has ? 'Замінити' : 'Вибрати зображення') . '</span></label>'
             . '<button type="button" class="cover__clear"' . ($has ? '' : ' hidden') . '>Прибрати</button>'
             . '</div>'
             . '<span class="cover__err" hidden></span>'

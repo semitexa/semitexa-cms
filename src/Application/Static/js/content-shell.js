@@ -93,6 +93,14 @@
   var UPLOAD_URL = '/os/app/cms/media';
   var ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 
+  // Each selection starts its own request, and they do not finish in order.
+  // Without a generation the second choice can be overwritten by the first
+  // arriving late — and a clear can be undone by a response for the image the
+  // author just removed. The counter is per cover; a response whose generation
+  // is no longer current is dropped.
+  var coverGeneration = 0;
+  var coverPending = 0;
+
   function csrfToken() {
     var input = form.querySelector('input[name="_csrf"]');
     return input ? input.value : '';
@@ -112,7 +120,8 @@
     if (clear) { clear.hidden = !has; }
     // The label is the only affordance when there is nothing yet, so it has to
     // say which of the two things it does.
-    if (pick) { pick.lastChild.nodeValue = has ? 'Замінити' : 'Вибрати зображення'; }
+    var pickText = pick ? pick.querySelector('span') : null;
+    if (pickText) { pickText.textContent = has ? 'Замінити' : 'Вибрати зображення'; }
     markDirty();
   }
 
@@ -125,7 +134,7 @@
 
   form.addEventListener('change', function (event) {
     var input = event.target;
-    if (!input.matches || !input.matches('.cover__pick input[type="file"]')) { return; }
+    if (!input.matches || !input.matches('.cover__file')) { return; }
 
     var cover = input.closest('.cover');
     var file = input.files && input.files[0];
@@ -146,9 +155,15 @@
     data.append('file', file);
     data.append('_csrf', csrfToken());
 
+    var generation = ++coverGeneration;
+    coverPending += 1;
+    setState('saving');
+
     fetch(UPLOAD_URL, { method: 'POST', body: data, headers: { 'Accept': 'application/json' } })
       .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
       .then(function (result) {
+        // Superseded by a later choice, or by the author clearing the field.
+        if (generation !== coverGeneration) { return; }
         if (!result.ok || !result.body || !result.body.assetId) {
           // The server says which collection refused it and why — wrong format,
           // too large, over quota — and the author is standing there waiting.
@@ -157,14 +172,33 @@
         }
         coverShow(cover, result.body.assetId, result.body.url);
       })
-      .catch(function () { coverFail(cover, 'Не вдалося зберегти зображення.'); });
+      .catch(function () {
+        if (generation !== coverGeneration) { return; }
+        coverFail(cover, 'Не вдалося зберегти зображення.');
+      })
+      .then(function () {
+        coverPending -= 1;
+        if (coverPending <= 0) { coverPending = 0; setState(dirty ? 'dirty' : 'clean'); }
+      });
   });
 
   form.addEventListener('click', function (event) {
     var button = event.target.closest ? event.target.closest('.cover__clear') : null;
     if (!button) { return; }
     event.preventDefault();
+    // Supersedes anything in flight, so a late response cannot put back the
+    // image the author just removed.
+    coverGeneration += 1;
     coverShow(button.closest('.cover'), '', '');
+  });
+
+  // Saving mid-upload would post the PREVIOUS id — the author would watch the
+  // picture they chose not arrive, with nothing to explain it.
+  form.addEventListener('submit', function (event) {
+    if (coverPending > 0) {
+      event.preventDefault();
+      setState('saving');
+    }
   });
 
   setState('clean');

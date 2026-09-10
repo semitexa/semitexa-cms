@@ -206,7 +206,14 @@ HTML;
         }
 
         if ($items === '') {
-            $items = '<p class="empty">Тут поки порожньо.</p>';
+            // Empty and past-the-end are different facts. Saying "порожньо"
+            // about a collection that holds forty records is the console
+            // stating something false about the site — the same conflation
+            // fixed in the chat listing, still standing here.
+            $items = $rows->total > 0
+                ? '<p class="empty">На цій сторінці нічого немає. '
+                    . '<a href="/os/app/cms?ref=' . rawurlencode($ref) . '&page=1">До першої сторінки</a></p>'
+                : '<p class="empty">Тут поки порожньо.</p>';
         }
 
         $pager = '';
