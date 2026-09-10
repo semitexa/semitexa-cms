@@ -29,7 +29,7 @@ final class ContentCreateAffordanceTest extends TestCase
     #[Test]
     public function a_collection_that_can_author_offers_it(): void
     {
-        $html = (new ContentEditorPage())->renderRows($this->rows(), 'demo:articles', 'tok-123');
+        $html = (new ContentEditorPage())->renderRows($this->rows(), 'demo:articles', 'tok-123', true);
 
         $this->assertStringContainsString('action="/os/app/cms/create"', $html);
         $this->assertStringContainsString('value="demo:articles"', $html);
@@ -44,7 +44,7 @@ final class ContentCreateAffordanceTest extends TestCase
     {
         // No token means the module does not implement the creator contract, so
         // the console must not hint that it does.
-        $html = (new ContentEditorPage())->renderRows($this->rows(), 'demo:articles', '');
+        $html = (new ContentEditorPage())->renderRows($this->rows(), 'demo:articles', '', false);
 
         $this->assertStringNotContainsString('/os/app/cms/create', $html);
     }
@@ -54,9 +54,58 @@ final class ContentCreateAffordanceTest extends TestCase
     {
         // The chooser renders through the same view with an empty ref; a create
         // form there would post a ref naming no collection at all.
-        $html = (new ContentEditorPage())->renderRows($this->rows(), '', 'tok-123');
+        $html = (new ContentEditorPage())->renderRows($this->rows(), '', 'tok-123', true);
 
         $this->assertStringNotContainsString('/os/app/cms/create', $html);
+    }
+
+    #[Test]
+    public function creating_and_removing_are_offered_independently(): void
+    {
+        $page = new ContentEditorPage();
+
+        // A module may offer either, both or neither. Handing the remover a
+        // create button — which the first version of this did, because both
+        // hung off the same token — is the refusal-answering button the whole
+        // contract exists to avoid.
+        $removeOnly = $page->renderRows($this->rows(), 'demo:articles', 'tok', false, true);
+        $this->assertStringNotContainsString('/os/app/cms/create', $removeOnly);
+        $this->assertStringContainsString('/os/app/cms/delete', $removeOnly);
+
+        $createOnly = $page->renderRows($this->rows(), 'demo:articles', 'tok', true, false);
+        $this->assertStringContainsString('/os/app/cms/create', $createOnly);
+        $this->assertStringNotContainsString('/os/app/cms/delete', $createOnly);
+
+        $neither = $page->renderRows($this->rows(), 'demo:articles', 'tok', false, false);
+        $this->assertStringNotContainsString('/os/app/cms/create', $neither);
+        $this->assertStringNotContainsString('/os/app/cms/delete', $neither);
+    }
+
+    #[Test]
+    public function a_rows_delete_control_posts_rather_than_links(): void
+    {
+        // A GET that writes can be followed by a crawler or a browser prefetch.
+        $html = (new ContentEditorPage())->renderRows($this->rows(), 'demo:articles', 'tok', false, true);
+
+        $this->assertStringContainsString('<form class="rm" method="post"', $html);
+        $this->assertStringNotContainsString('href="/os/app/cms/delete', $html);
+    }
+
+    #[Test]
+    public function the_confirmation_names_the_record_and_promises_only_what_it_can(): void
+    {
+        $html = (new ContentEditorPage())->renderConfirmRemoval('demo:article:x', 'Весняна виставка', 'demo:articles', 'tok');
+
+        // By name, not by ref: a row's delete control sits next to its title,
+        // which is exactly where a misclick lives.
+        $this->assertStringContainsString('Прибрати «Весняна виставка»?', $html);
+        $this->assertStringContainsString('name="confirm" value="1"', $html);
+        $this->assertStringContainsString('Скасувати', $html);
+
+        // The CMS never touches the table, so it must not claim the bytes are
+        // gone — only that the item stops being on the site.
+        $this->assertStringContainsString('зникне з сайту', $html);
+        $this->assertStringContainsString('може лишити копію', $html);
     }
 
     #[Test]
