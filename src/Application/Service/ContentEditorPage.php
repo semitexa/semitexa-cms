@@ -7,7 +7,9 @@ namespace Semitexa\Cms\Application\Service;
 use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Cms\Domain\Model\ContentRows;
+use Semitexa\Cms\Domain\Model\ContentSeo;
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Ssr\Application\Service\Asset\AssetManager;
 use Semitexa\Ssr\Application\Service\Asset\ScriptNonceSource;
 
@@ -21,8 +23,52 @@ use Semitexa\Ssr\Application\Service\Asset\ScriptNonceSource;
 #[AsService]
 final class ContentEditorPage
 {
-    public function render(ContentDraft $draft, string $csrfToken, ?string $savedMessage = null, ?string $error = null): string
-    {
+    /**
+     * What the page says about itself to a search engine, and which of it a
+     * person claimed.
+     *
+     * Read here rather than threaded through every caller: four handlers render
+     * this page and none of them has anything else to do with metadata. Absent
+     * under a bare `new`, which is how the unit tests build it — then the
+     * section is simply not offered, which is the right answer for an
+     * installation whose CMS store is not wired.
+     */
+    #[InjectAsReadonly]
+    protected SeoStore $seoStore;
+
+    /**
+     * The metadata fields the panel offers, in the order an author reads them.
+     *
+     * `jsonLd` is generated but deliberately absent: it is a graph for machines,
+     * and a textarea of raw JSON in a content console is a way to store
+     * something no crawler can parse. It regenerates freely and nobody has to
+     * look at it.
+     *
+     * @var array<string, array{0: string, 1: string}> field => [label, hint]
+     */
+    private const SEO_FIELDS = [
+        'title' => ['Заголовок у пошуку', ''],
+        'description' => ['Опис у пошуку', 'Приблизно 160 символів — далі Google обрізає.'],
+        'ogTitle' => ['Заголовок у соцмережах', ''],
+        'ogDescription' => ['Опис у соцмережах', ''],
+        'ogImage' => ['Картинка для соцмереж', 'Адреса зображення, яке показують при поширенні.'],
+        'canonical' => ['Канонічна адреса', 'Головна адреса сторінки, якщо їх кілька.'],
+        'robots' => ['Індексація', 'Наприклад index,follow або noindex.'],
+    ];
+
+    /**
+     * @param ?string $warning something the save took away, when it did. Shown
+     *                         in place of «Збережено.» rather than beside it:
+     *                         one notice line, and the thing worth reading is
+     *                         the loss, not the success it happened under.
+     */
+    public function render(
+        ContentDraft $draft,
+        string $csrfToken,
+        ?string $savedMessage = null,
+        ?string $error = null,
+        ?string $warning = null,
+    ): string {
         // Editing a page is writing, not filling in a form. So the draft is
         // split by what the author is actually doing: the name of the thing,
         // the thing itself, and the settings about it. Only the first two are
@@ -42,6 +88,10 @@ final class ContentEditorPage
         $notice = '';
         if ($error !== null) {
             $notice = '<p class="notice notice--bad" role="alert">' . $this->escape($error) . '</p>';
+        } elseif ($warning !== null) {
+            // role="alert" like the error, not like the success: this one has
+            // to reach an author who is already reaching for the close button.
+            $notice = '<p class="notice notice--warn" role="alert">' . $this->escape($warning) . '</p>';
         } elseif ($savedMessage !== null) {
             $notice = '<p class="notice notice--ok">' . $this->escape($savedMessage) . '</p>';
         }
@@ -75,13 +125,15 @@ final class ContentEditorPage
 
         // The panel exists only when something belongs in it; a button that
         // opens an empty drawer is worse than no button.
+        $panelFields = '';
+        foreach ($rest as $field) {
+            $panelFields .= $this->field($field, self::positionOf($draft->fields, $field));
+        }
+        $panelFields .= $this->seoSection($draft->ref);
+
         $panel = '';
         $panelButton = '';
-        if ($rest !== []) {
-            $panelFields = '';
-            foreach ($rest as $field) {
-                $panelFields .= $this->field($field, self::positionOf($draft->fields, $field));
-            }
+        if ($panelFields !== '') {
             $panel = '<aside class="panel" id="panel" aria-label="Властивості">'
                 . '<div class="panel__head"><span>Властивості</span>'
                 . '<button class="icon" type="button" data-act="props" aria-label="Закрити">×</button></div>'
@@ -121,6 +173,17 @@ final class ContentEditorPage
   .notice{margin:0;padding:9px 16px;font-size:13px;flex:0 0 auto}
   .notice--ok{color:var(--ok);background:rgba(94,234,212,.08)}
   .notice--bad{color:var(--danger);background:rgba(255,107,130,.10)}
+  .notice--warn{color:var(--warn);background:rgba(245,196,81,.12)}
+
+  /* --- metadata: what the page says about itself, and who said it --- */
+  .seo{margin-top:18px;padding-top:14px;border-top:1px solid rgba(var(--line-rgb),.16)}
+  .seo__head{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:6px}
+  .seo__field{display:block;margin-top:12px}
+  .seo__label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute);margin-bottom:4px}
+  .tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:999px;
+       background:rgba(var(--line-rgb),.16);color:var(--dim)}
+  .tag--mine{background:rgba(var(--accent-rgb),.18);color:var(--accent)}
+  .tag--none{background:transparent;border:1px dashed rgba(var(--line-rgb),.3)}
 
   .body{flex:1;min-height:0;display:flex}
 
@@ -310,6 +373,87 @@ HTML;
      * The canvas keeps real `required` on its title input, because that control
      * is always visible and the browser can point at it.
      */
+    /**
+     * The page's metadata, with its provenance visible by construction.
+     *
+     * The CMS writes this from the page's own text, and the promise it makes is
+     * that a person's decision is never overwritten. That promise is only real
+     * if an author can SEE which values are theirs — so the box shows what it
+     * shows for a reason:
+     *
+     *   * a value a person claimed is IN the field, as a value;
+     *   * a generated value is the PLACEHOLDER, grey, with the field empty.
+     *
+     * That is not decoration, it is the mechanism. The form posts every field
+     * on every save, and {@see ContentSeo::withAuthored()} reads a non-empty
+     * value as a claim — so rendering generated text as a value would make the
+     * first unrelated save claim all of it and switch the generator off for
+     * good. Empty means "still the machine's", which is exactly what it is.
+     * Clearing a field you own hands it back, and the placeholder returning is
+     * how you know it worked.
+     *
+     * Empty string when the store is not wired: an editor cannot offer to keep
+     * metadata it has nowhere to put.
+     */
+    private function seoSection(string $ref): string
+    {
+        if (!isset($this->seoStore) || trim($ref) === '') {
+            return '';
+        }
+
+        try {
+            $seo = $this->seoStore->get($ref);
+        } catch (\Throwable) {
+            // A console that will not open because the metadata table is not
+            // there yet is worse than a console without the section.
+            return '';
+        }
+
+        $fields = '';
+        foreach (self::SEO_FIELDS as $name => [$label, $hint]) {
+            $fields .= $this->seoField($seo, $name, $label, $hint);
+        }
+
+        return '<div class="seo"><div class="seo__head">Для пошуку і соцмереж</div>'
+            . '<p class="hint">Порожнє поле CMS заповнює сама, з тексту сторінки — сіре нижче саме звідти.'
+            . ' Напишіть своє, і воно перестане оновлюватись; зітріть — і повернеться підказка.</p>'
+            . $fields . '</div>';
+    }
+
+    private function seoField(ContentSeo $seo, string $name, string $label, string $hint): string
+    {
+        $authored = $seo->isAuthored($name);
+        $value = $seo->{$name};
+        $generatable = in_array($name, ContentSeo::GENERATED_FIELDS, true);
+
+        $tag = match (true) {
+            $authored => '<span class="tag tag--mine">ваше</span>',
+            !$generatable => '',
+            $value !== '' => '<span class="tag">згенеровано</span>',
+            default => '<span class="tag tag--none">ще не згенеровано</span>',
+        };
+
+        // A generated value is a placeholder, never a value — see seoSection().
+        // A field nothing generates (an address, an indexing rule) has no
+        // second provenance to confuse and carries its value plainly.
+        $shown = $authored || !$generatable ? $value : '';
+        $placeholder = !$authored && $generatable && $value !== ''
+            ? ' placeholder="' . $this->escape($value) . '"'
+            : '';
+
+        $longer = in_array($name, ['description', 'ogDescription'], true);
+        $control = $longer
+            ? '<textarea name="seo[' . $this->escape($name) . ']" rows="3"' . $placeholder . '>'
+                . $this->escape($shown) . '</textarea>'
+            : '<input type="text" name="seo[' . $this->escape($name) . ']" value="'
+                . $this->escape($shown) . '"' . $placeholder . '>';
+
+        return '<label class="seo__field"><span class="seo__label">' . $this->escape($label) . $tag . '</span>'
+            . $control
+            . ($hint === '' ? '' : '<span class="hint">' . $this->escape($hint) . '</span>')
+            . '</label>';
+    }
+
     private function field(ContentField $field, int $position): string
     {
         $name = $this->escape($field->name);
@@ -320,6 +464,14 @@ HTML;
 
         $control = match ($field->kind) {
             ContentField::LINE => '<input type="text" name="' . $name . '" value="' . $value . '"' . $required . '>',
+            // The browser's own picker: it formats the day in the reader's
+            // locale and submits ISO regardless, so the console needs no
+            // calendar of its own. platform-ui HAS one — platform.date-field —
+            // but it renders through the component runtime, and this page is
+            // standalone HTML in an iframe with neither Twig nor that runtime.
+            // Pulling the kit in for one field would cost the page its
+            // independence to gain a picker the platform already provides.
+            ContentField::DATE => '<input type="date" name="' . $name . '" value="' . $value . '"' . $required . '>',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
             // The RAW id: imageControl() escapes it itself, and escaping twice
             // posts 'a&b' back as 'a&amp;b' — the value changes on every save.

@@ -89,14 +89,23 @@ final class ContentSaveHandler implements TypedHandlerInterface
         // one is a hidden input, which is barred from constraint validation,
         // and a form can be posted without ever loading our page anyway. This
         // is the gate.
-        $error = self::missingRequired($before, $payload->submittedValues());
+        $error = self::missingRequired($before, $payload->submittedValues())
+            ?? self::malformedDate($before, $payload->submittedValues());
+        $warning = null;
 
         try {
             if ($error === null) {
-                $editor->save($ref, $this->sanitizer->sanitizeValues(
+                $clean = $this->sanitizer->sanitizeValues(
                     $payload->submittedValues(),
                     self::htmlFieldNames($before),
-                ));
+                );
+                $editor->save($ref, $clean->values);
+                // What the allowlist would not take. Said here rather than
+                // swallowed: an article emptied of its pictures under
+                // «Збережено.» is discovered by reopening it, which is the
+                // worst moment and the wrong person to discover it.
+                $warning = $clean->notice();
+                $this->saveSeo($ref, $editor->editorId(), $payload->submittedSeo());
                 $this->queueTranslation($ref, $editor->editorId());
                 $saved = $editor->load($ref);
                 if ($saved !== null) {
@@ -123,6 +132,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
             $this->csrfToken(),
             $error === null ? 'Збережено.' : null,
             $error,
+            $warning,
         ));
     }
 
@@ -144,6 +154,32 @@ final class ContentSaveHandler implements TypedHandlerInterface
         }
 
         return null;
+    }
+
+    /**
+     * Take the metadata an author typed, and only that.
+     *
+     * The panel posts every metadata field on every save, so most of what
+     * arrives here is blanks that mean nothing. Which blanks mean something is
+     * a question only the stored record can answer, and
+     * {@see \Semitexa\Cms\Domain\Model\ContentSeo::editorSubmission()}
+     * answers it: a blank on a field the author owns hands it back to the
+     * generator, a blank on one they do not own is dropped.
+     *
+     * A submission carrying no metadata group at all is left alone entirely: an
+     * editor that never offered the fields is not an author clearing them.
+     *
+     * @param array<string, string> $values
+     */
+    private function saveSeo(string $ref, string $editorId, array $values): void
+    {
+        if ($values === [] || !isset($this->seo)) {
+            return;
+        }
+
+        // Through the record, because a blank box means different things
+        // depending on who owns the field — see ContentSeo::editorSubmission().
+        $this->seo->saveAuthored($ref, $editorId, $this->seo->get($ref)->editorSubmission($values));
     }
 
     /**
@@ -217,6 +253,38 @@ final class ContentSaveHandler implements TypedHandlerInterface
      *
      * @param array<string, string> $values
      */
+    /**
+     * The first date field holding something that is not a calendar day.
+     *
+     * A native date input cannot produce one, which is exactly why this is
+     * here: the browser is not the boundary. A form can be posted from
+     * anywhere, and a module that stored «31.02.2026» would find out when
+     * something tried to render a schedule from it, months later and far from
+     * the save that caused it.
+     *
+     * Reported rather than corrected. There is no honest correction for a day
+     * that does not exist — picking a nearby one puts a date on the page that
+     * nobody chose.
+     *
+     * @param array<string, string> $values
+     */
+    private static function malformedDate(ContentDraft $draft, array $values): ?string
+    {
+        foreach ($draft->fields as $field) {
+            if ($field->kind !== ContentField::DATE) {
+                continue;
+            }
+
+            $submitted = trim($values[$field->name] ?? '');
+
+            if (!ContentField::isCalendarDay($submitted)) {
+                return 'Поле «' . $field->label . '»: «' . $submitted . '» — не дата. Формат: РРРР-ММ-ДД.';
+            }
+        }
+
+        return null;
+    }
+
     private static function missingRequired(ContentDraft $draft, array $values): ?string
     {
         foreach ($draft->fields as $field) {
