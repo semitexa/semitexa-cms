@@ -89,14 +89,33 @@ final class ContentSaveHandler implements TypedHandlerInterface
         // one is a hidden input, which is barred from constraint validation,
         // and a form can be posted without ever loading our page anyway. This
         // is the gate.
-        $error = self::missingRequired($before, $payload->submittedValues());
+        $error = self::missingRequired($before, $payload->submittedValues())
+            ?? self::malformedDate($before, $payload->submittedValues());
+        $warning = null;
+
+        // Whether the author's text reached the record. Everything after that
+        // write — the metadata, the translation and SEO queues — is separate
+        // work on a store this handler cannot enrol in one transaction with the
+        // content. So a failure there must not be reported as a failed save:
+        // the text IS saved, and telling the author it is not sends them back
+        // to retype what is already there, or to hunt for damage that does not
+        // exist.
+        $contentSaved = false;
 
         try {
             if ($error === null) {
-                $editor->save($ref, $this->sanitizer->sanitizeValues(
+                $clean = $this->sanitizer->sanitizeValues(
                     $payload->submittedValues(),
                     self::htmlFieldNames($before),
-                ));
+                );
+                $editor->save($ref, $clean->values);
+                $contentSaved = true;
+                // What the allowlist would not take. Said here rather than
+                // swallowed: an article emptied of its pictures under
+                // «Збережено.» is discovered by reopening it, which is the
+                // worst moment and the wrong person to discover it.
+                $warning = $clean->notice();
+                $this->saveSeo($ref, $editor->editorId(), $payload->submittedSeo());
                 $this->queueTranslation($ref, $editor->editorId());
                 $saved = $editor->load($ref);
                 if ($saved !== null) {
@@ -104,9 +123,14 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 }
             }
         } catch (\InvalidArgumentException $e) {
-            $error = $e->getMessage();
+            [$error, $warning] = self::reportFailure($contentSaved, $warning, $e->getMessage(), $e->getMessage());
         } catch (\Throwable) {
-            $error = 'Не вдалося зберегти. Спробуйте ще раз.';
+            [$error, $warning] = self::reportFailure(
+                $contentSaved,
+                $warning,
+                'Не вдалося зберегти. Спробуйте ще раз.',
+                'Текст збережено, але метадані для пошуку — ні. Відкрийте запис і збережіть ще раз.',
+            );
         }
 
         // Reload rather than echo the submitted values back: what the record
@@ -123,7 +147,45 @@ final class ContentSaveHandler implements TypedHandlerInterface
             $this->csrfToken(),
             $error === null ? 'Збережено.' : null,
             $error,
+            $warning,
         ));
+    }
+
+    /**
+     * Where a failure belongs once the content is already in the record.
+     *
+     * The author's text is written first; the metadata, the translation queue
+     * and the SEO queue are separate work on a store this handler cannot enrol
+     * in one transaction with it. So the two halves fail differently and must
+     * be reported differently. Before the write, a failure means nothing was
+     * saved and the page says so. After it, the text IS saved — reporting that
+     * as «Не вдалося зберегти» sends the author back to retype what is already
+     * there, or to go looking for damage that does not exist, and the next
+     * thing they do is save again over their own good copy.
+     *
+     * @return array{?string, ?string} the error to show, and the warning
+     */
+    private static function reportFailure(
+        bool $contentSaved,
+        ?string $warning,
+        string $beforeTheWrite,
+        string $afterTheWrite,
+    ): array {
+        return $contentSaved
+            ? [null, self::alsoSay($warning, $afterTheWrite)]
+            : [$beforeTheWrite, $warning];
+    }
+
+    /**
+     * Add a second thing worth saying to the notice, keeping the first.
+     *
+     * Both halves matter and neither replaces the other: the pictures an
+     * allowlist refused and the metadata that did not save are separate facts
+     * about one save, and dropping either is how an author finds out later.
+     */
+    private static function alsoSay(?string $notice, string $addition): string
+    {
+        return $notice === null || $notice === '' ? $addition : $notice . ' ' . $addition;
     }
 
     /**
@@ -144,6 +206,32 @@ final class ContentSaveHandler implements TypedHandlerInterface
         }
 
         return null;
+    }
+
+    /**
+     * Take the metadata an author typed, and only that.
+     *
+     * The panel posts every metadata field on every save, so most of what
+     * arrives here is blanks that mean nothing. Which blanks mean something is
+     * a question only the stored record can answer, and
+     * {@see \Semitexa\Cms\Domain\Model\ContentSeo::editorSubmission()}
+     * answers it: a blank on a field the author owns hands it back to the
+     * generator, a blank on one they do not own is dropped.
+     *
+     * A submission carrying no metadata group at all is left alone entirely: an
+     * editor that never offered the fields is not an author clearing them.
+     *
+     * @param array<string, string> $values
+     */
+    private function saveSeo(string $ref, string $editorId, array $values): void
+    {
+        if ($values === [] || !isset($this->seo)) {
+            return;
+        }
+
+        // Through the record, because a blank box means different things
+        // depending on who owns the field — see ContentSeo::editorSubmission().
+        $this->seo->saveAuthored($ref, $editorId, $this->seo->get($ref)->editorSubmission($values));
     }
 
     /**
@@ -217,6 +305,53 @@ final class ContentSaveHandler implements TypedHandlerInterface
      *
      * @param array<string, string> $values
      */
+    /**
+     * The first date field holding something that is not a calendar day.
+     *
+     * A native date input cannot produce one, which is exactly why this is
+     * here: the browser is not the boundary. A form can be posted from
+     * anywhere, and a module that stored «31.02.2026» would find out when
+     * something tried to render a schedule from it, months later and far from
+     * the save that caused it.
+     *
+     * Reported rather than corrected. There is no honest correction for a day
+     * that does not exist — picking a nearby one puts a date on the page that
+     * nobody chose.
+     *
+     * @param array<string, string> $values
+     */
+    private static function malformedDate(ContentDraft $draft, array $values): ?string
+    {
+        foreach ($draft->fields as $field) {
+            if ($field->kind !== ContentField::DATE) {
+                continue;
+            }
+
+            $submitted = $values[$field->name] ?? '';
+
+            // Nothing entered at all — the exact empty string, which is what a
+            // date input submits when it is blank and what a missing field
+            // resolves to. NOT a trimmed test: «   » is something the record
+            // would actually store, and skipping it here would put whitespace
+            // in a date column through the very gate that exists to stop it.
+            // Whether an empty value is allowed is missingRequired()'s
+            // question, not this one.
+            if ($submitted === '') {
+                continue;
+            }
+
+            // Checked exactly as it will be STORED. Validating a trimmed copy
+            // while saving the original is how « 2026-09-11 » passed this gate
+            // and landed in the record with its spaces — where isCalendarDay(),
+            // the very same test, calls it malformed on the way back out.
+            if (!ContentField::isCalendarDay($submitted)) {
+                return 'Поле «' . $field->label . '»: «' . $submitted . '» — не дата. Формат: РРРР-ММ-ДД.';
+            }
+        }
+
+        return null;
+    }
+
     private static function missingRequired(ContentDraft $draft, array $values): ?string
     {
         foreach ($draft->fields as $field) {

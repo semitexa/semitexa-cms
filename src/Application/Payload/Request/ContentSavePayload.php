@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Payload\Request;
 
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
+use Semitexa\Cms\Domain\Model\ContentSeo;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Request;
@@ -40,13 +41,53 @@ final class ContentSavePayload implements ValidatablePayloadInterface, OsContent
         $this->httpRequest = $httpRequest;
     }
 
-    /** @return array<string, string> */
+    /**
+     * The module's own fields.
+     *
+     * `seo` is named in the exclusion list rather than left to be filtered out
+     * by the is_scalar test it would fail anyway: a module must never receive a
+     * field it did not declare, and relying on the SHAPE of the metadata group
+     * to keep it out would stop working the day it carries a single value.
+     *
+     * @return array<string, string>
+     */
     public function submittedValues(): array
     {
         $values = [];
 
         foreach ($this->httpRequest->post ?? [] as $key => $value) {
-            if (is_string($key) && is_scalar($value) && !in_array($key, ['ref', '_csrf', 'csrf_token'], true)) {
+            if (is_string($key) && is_scalar($value) && !in_array($key, ['ref', '_csrf', 'csrf_token', 'seo'], true)) {
+                $values[$key] = (string) $value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * The page's metadata, which the CMS owns rather than the module.
+     *
+     * Empty when the form carried none — an editor whose panel does not offer
+     * the fields must not be read as an author clearing every one of them.
+     *
+     * @return array<string, string>
+     */
+    public function submittedSeo(): array
+    {
+        $group = $this->httpRequest->post['seo'] ?? null;
+
+        if (!is_array($group)) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach ($group as $key => $value) {
+            // Only what the form actually offers. Every scalar key used to be
+            // accepted, which let a post set a field the editor has no control
+            // for — and setting one marks it authored, which stops generation
+            // from ever touching it again.
+            if (is_string($key) && in_array($key, ContentSeo::EDITOR_FIELDS, true) && is_scalar($value)) {
                 $values[$key] = (string) $value;
             }
         }

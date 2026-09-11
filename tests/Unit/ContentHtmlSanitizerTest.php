@@ -8,6 +8,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Service\ContentHtmlSanitizer;
+use Semitexa\Cms\Application\Service\ContentImageSources;
+use Semitexa\Media\Domain\Contract\MediaUrlGeneratorInterface;
+use Semitexa\Testing\Traits\BuildsContainerManagedObjects;
 
 /**
  * What a rich field may store.
@@ -18,6 +21,8 @@ use Semitexa\Cms\Application\Service\ContentHtmlSanitizer;
  */
 final class ContentHtmlSanitizerTest extends TestCase
 {
+    use BuildsContainerManagedObjects;
+
     private ContentHtmlSanitizer $sanitizer;
 
     protected function setUp(): void
@@ -184,8 +189,76 @@ final class ContentHtmlSanitizerTest extends TestCase
 
         $out = $this->sanitizer->sanitizeValues($values, ['body']);
 
-        self::assertSame('a < b & c', $out['title']);
-        self::assertStringNotContainsString('script', $out['body']);
+        self::assertSame('a < b & c', $out->values['title']);
+        self::assertStringNotContainsString('script', $out->values['body']);
+        self::assertSame([], $out->refusedImageSources, 'nothing was an image');
+        self::assertNull($out->notice(), 'and a notice about nothing trains people to ignore notices');
+    }
+
+    /**
+     * The other half of the failure. Widening the allowlist stopped the
+     * LEGITIMATE pictures disappearing; this is what happens to the rest —
+     * they still cannot be stored, but the author finds out while they are
+     * still looking at the editor rather than by reopening the article later.
+     */
+    #[Test]
+    public function a_save_that_drops_pictures_says_which(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div><img src="https://evil.test/a.png"><img src="https://other.test/b.png">текст</div>',
+        ], ['body']);
+
+        self::assertSame(
+            ['https://evil.test/a.png', 'https://other.test/b.png'],
+            $out->refusedImageSources,
+            'in document order — an author reading the message is looking for a picture on the page',
+        );
+
+        $notice = (string) $out->notice();
+
+        self::assertStringContainsString('2 шт.', $notice);
+        self::assertStringContainsString('https://evil.test/a.png', $notice);
+        self::assertStringContainsString('https://other.test/b.png', $notice);
+        self::assertStringContainsString('текст', $out->values['body'], 'the words were never the problem');
+    }
+
+    /** The same picture twice is one thing to fix, not two. */
+    #[Test]
+    public function the_same_refused_address_is_reported_once(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div><img src="https://evil.test/a.png"><img src="https://evil.test/a.png"></div>',
+        ], ['body']);
+
+        self::assertSame(['https://evil.test/a.png'], $out->refusedImageSources);
+    }
+
+    /**
+     * Markup that showed nothing is not a loss. Reporting it would put a
+     * warning on saves where nothing happened, which is how a warning stops
+     * being read.
+     */
+    #[Test]
+    public function an_image_that_displayed_nothing_is_not_reported(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div><img alt="нічого">текст</div>',
+        ], ['body']);
+
+        self::assertSame([], $out->refusedImageSources);
+        self::assertNull($out->notice());
+    }
+
+    /** Every field is accounted for, not only the first one that lost something. */
+    #[Test]
+    public function refusals_from_every_markup_field_are_collected(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'intro' => '<div><img src="https://a.test/1.png"></div>',
+            'body' => '<div><img src="https://b.test/2.png"></div>',
+        ], ['intro', 'body']);
+
+        self::assertSame(['https://a.test/1.png', 'https://b.test/2.png'], $out->refusedImageSources);
     }
 
     /**
@@ -194,6 +267,69 @@ final class ContentHtmlSanitizerTest extends TestCase
      * mid-tag, under a «Збережено.» message. Nothing in the stored value would
      * have told the author, and only reopening it would.
      */
+    /**
+     * A `data:` image is reported, not erased in silence.
+     *
+     * This is the case the reporting missed for the reason it was easiest to
+     * miss. The scheme allowlist permits http and https only, so Symfony does
+     * not reject the image — it removes the `src` attribute — and what the
+     * ownership pass then sees is an <img> with no source at all, which it
+     * deliberately says nothing about (markup that displayed nothing is not
+     * worth a warning). A pasted screenshot therefore disappeared under
+     * «Збережено.» with no notice naming it.
+     */
+    #[Test]
+    public function an_inline_data_image_is_named_rather_than_quietly_erased(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div><img src="data:image/png;base64,iVBORw0KGgo="></div>',
+        ], ['body']);
+
+        self::assertSame(['data:image/png;base64,iVBORw0KGgo='], $out->refusedImageSources);
+        self::assertStringNotContainsString('<img', $out->values['body']);
+        self::assertNotNull($out->notice());
+    }
+
+    /**
+     * Every spelling of `src` a browser would load, not only the one our own
+     * editor writes.
+     *
+     * This scan exists for markup PASTED FROM SOMEWHERE ELSE, so the shapes
+     * Trix never produces are exactly the shapes it has to catch. A regular
+     * expression for `src="…"` read the one form we generate and returned
+     * nothing for the other two — measured, both silently missed — which meant
+     * a pasted image vanished from the article with no warning naming it.
+     */
+    #[Test]
+    public function a_foreign_source_is_found_however_it_is_quoted(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div>'
+                . '<img src="https://a.test/double.png">'
+                . "<img src='https://b.test/single.png'>"
+                . '<img src=https://c.test/bare.png>'
+                . '<IMG SRC="https://d.test/upper.png">'
+                . '</div>',
+        ], ['body']);
+
+        self::assertSame([
+            'https://a.test/double.png',
+            'https://b.test/single.png',
+            'https://c.test/bare.png',
+            'https://d.test/upper.png',
+        ], $out->refusedImageSources);
+    }
+
+    /** An <img> that never carried a source is still not worth a warning. */
+    #[Test]
+    public function an_image_with_no_source_at_all_is_still_passed_over(): void
+    {
+        $out = $this->sanitizer->sanitizeValues(['body' => '<div><img alt="nothing"></div>'], ['body']);
+
+        self::assertSame([], $out->refusedImageSources);
+        self::assertNull($out->notice());
+    }
+
     #[Test]
     public function a_document_past_the_librarys_own_limit_survives_whole(): void
     {
@@ -224,5 +360,77 @@ final class ContentHtmlSanitizerTest extends TestCase
         $filler = str_repeat('a', 200_000 - strlen('<div></div>'));
 
         self::assertStringContainsString($filler, $this->sanitizer->sanitize('<div>' . $filler . '</div>'));
+    }
+
+    /**
+     * The failure the whole allowlist widening exists for.
+     *
+     * A record whose pictures were not put there by this editor — a module
+     * older than the CMS, a page rendered straight through MediaUrlGenerator —
+     * opened in the console and saved came back with every image gone, under
+     * «Збережено.» and with nothing said. An address the installation itself
+     * publishes has to survive the round trip.
+     */
+    #[Test]
+    public function an_image_this_installation_publishes_itself_survives_a_save(): void
+    {
+        $src = 'https://cdn.example.test/bucket/media/tenant-a/content/a1/content.webp?v=1757500000';
+
+        $out = $this->sanitizerPublishing('https://cdn.example.test/bucket/media/tenant-a/')
+            ->sanitize('<figure><img src="' . $src . '" alt="Музей"><figcaption>Підпис</figcaption></figure>');
+
+        // Entity-decoded before the comparison: the library writes `=` inside
+        // an attribute as `&#61;`, which is the same address to every browser
+        // and to the next pass of this sanitizer, but not to a string compare.
+        self::assertStringContainsString(
+            'src="' . $src . '"',
+            html_entity_decode($out, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+        );
+        self::assertStringContainsString('<figcaption>Підпис</figcaption>', $out);
+
+        // And it still passes on the way back in — an author who saves twice
+        // must not lose on the second press what survived the first.
+        self::assertStringContainsString(
+            '<img',
+            $this->sanitizerPublishing('https://cdn.example.test/bucket/media/tenant-a/')->sanitize($out),
+        );
+    }
+
+    /**
+     * Letting http(s) through the library's scheme gate moved the decision
+     * here — so the foreign host has to be refused by THIS class even on an
+     * installation that publishes its media over the same scheme.
+     */
+    #[Test]
+    public function a_foreign_host_is_still_refused_where_media_is_published(): void
+    {
+        $out = $this->sanitizerPublishing('https://cdn.example.test/bucket/media/tenant-a/')
+            ->sanitize('<div><img src="https://evil.test/pixel.png" alt="x"></div>');
+
+        self::assertStringNotContainsString('<img', $out);
+    }
+
+    /** A sanitizer on an installation whose media is published under `$prefix`. */
+    private function sanitizerPublishing(string $prefix): ContentHtmlSanitizer
+    {
+        $sources = self::createWithDependencies(ContentImageSources::class, [
+            'media' => new class ($prefix) implements MediaUrlGeneratorInterface {
+                public function __construct(private readonly string $prefix)
+                {
+                }
+
+                public function url(string $assetId, ?string $variantKey = null): string
+                {
+                    return $this->prefix . $assetId;
+                }
+
+                public function publicUrlPrefix(): string
+                {
+                    return $this->prefix;
+                }
+            },
+        ]);
+
+        return self::createWithDependencies(ContentHtmlSanitizer::class, ['sources' => $sources]);
     }
 }

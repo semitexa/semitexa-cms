@@ -33,6 +33,23 @@ final readonly class ContentSeo
     public const GENERATED_FIELDS = ['title', 'description', 'ogTitle', 'ogDescription', 'jsonLd'];
 
     /**
+     * The fields the editor puts on the form, and therefore the only ones a
+     * submission may set.
+     *
+     * `jsonLd` is deliberately absent: it is built from the record, there is no
+     * control for it, and nobody types it. That made it the one field a crafted
+     * post could reach unopposed — `seo[jsonLd]=…` went through
+     * {@see editorSubmission()} like any other key, and the value it set was
+     * then marked AUTHORED, which is permanent in effect: generation leaves an
+     * authored field alone, so the record would carry that block for as long as
+     * it existed and nothing on the page would explain where it came from.
+     *
+     * Read by the form that renders these fields and by the request that
+     * accepts them, so the two cannot disagree about what the editor owns.
+     */
+    public const EDITOR_FIELDS = ['title', 'description', 'ogTitle', 'ogDescription', 'ogImage', 'canonical', 'robots'];
+
+    /**
      * @param list<string> $authored names of fields a person set by hand
      */
     public function __construct(
@@ -103,6 +120,45 @@ final readonly class ContentSeo
             authored: $this->authored,
             sourceHash: $sourceHash,
         );
+    }
+
+    /**
+     * Read a submission from the editor panel, where a blank box has two
+     * different meanings depending on who owns the field.
+     *
+     * The panel posts every metadata field on every save, and it renders a
+     * GENERATED value as a placeholder with the box empty — because an empty
+     * box is what must be sent back when the author did not touch the section,
+     * and a generated value rendered as a value would be claimed by the very
+     * next save.
+     *
+     * Which makes a blank ambiguous, and the owner resolves it:
+     *
+     *   * on a field the author OWNS, a blank is them handing it back, and
+     *     {@see withAuthored()} clears the value and releases the claim;
+     *   * on a field they do not own, a blank is just the box the placeholder
+     *     was drawn in. It says nothing, so it is dropped here — passing it on
+     *     would erase the generated text, and since a save with unchanged
+     *     content settles the debounce rather than restarting it, nothing would
+     *     ever write it back.
+     *
+     * That last part is not hypothetical: it was measured through the live form
+     * before this method existed. One save with the panel untouched emptied a
+     * page's whole description, permanently.
+     *
+     * @param array<string, string> $values as posted
+     *
+     * @return array<string, string> ready for {@see withAuthored()}
+     */
+    public function editorSubmission(array $values): array
+    {
+        foreach (self::GENERATED_FIELDS as $field) {
+            if (array_key_exists($field, $values) && trim($values[$field]) === '' && !$this->isAuthored($field)) {
+                unset($values[$field]);
+            }
+        }
+
+        return $values;
     }
 
     /**

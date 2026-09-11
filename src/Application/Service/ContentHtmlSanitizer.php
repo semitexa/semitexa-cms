@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Application\Service;
 
+use Semitexa\Cms\Domain\Model\SanitizedContent;
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
 
@@ -21,12 +23,11 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
  *
  *   images  figure, figcaption, img            (Trix attachments)
  *
- * An image's `src` is checked against this application's own media route and
- * nothing else. That is the whole point of storing an identifier URL rather
- * than a storage URL: the allowlist becomes a shape we own and can state
- * exactly, instead of "some host we hope is ours". An `<img>` pointing anywhere
- * else — a tracking pixel, an exfiltrating request, a picture that disappears
- * when someone else's server does — is not something an article may carry.
+ * An image's `src` is checked against the addresses this installation actually
+ * serves — {@see ContentImageSources} states them, and it is the only thing
+ * here that knows about storage or tenants. An `<img>` pointing anywhere else
+ * — a tracking pixel, an exfiltrating request, a picture that disappears when
+ * someone else's server does — is not something an article may carry.
  *
  * Attributes: `href` on a link, `language` on a code block (the one HTML
  * attribute Trix declares for `pre`), and `src`/`alt`/`width`/`height` on an
@@ -41,16 +42,6 @@ final class ContentHtmlSanitizer
 {
     /** Schemes a stored link may use. */
     private const LINK_SCHEMES = ['http', 'https', 'mailto', 'tel'];
-
-    /**
-     * The only shape an image in stored markup may point at: our own media
-     * route, addressed by asset id.
-     *
-     * Anchored at both ends on purpose — a prefix match would accept
-     * `/os/app/cms/media/../../something`, and a suffix match would accept
-     * `https://evil.test/os/app/cms/media/x`.
-     */
-    private const IMAGE_SRC = '#^/os/app/cms/media/[A-Za-z0-9._~-]+$#';
 
     /**
      * The largest document a rich field may store, in bytes.
@@ -70,31 +61,61 @@ final class ContentHtmlSanitizer
     private ?HtmlSanitizer $sanitizer = null;
 
     /**
-     * Sanitise the values of fields the editor declared as HTML.
+     * Which image addresses survive. Lazily defaulted rather than required,
+     * so this class still stands up under a bare `new` — the default answers
+     * for the identifier route alone, which is the safe direction to fail.
+     */
+    #[InjectAsReadonly]
+    protected ContentImageSources $sources;
+
+    /**
+     * Sanitise the values of fields the editor declared as HTML, and say what
+     * that cost.
      *
-     * Only those: a LINE or TEXT field is plain text, and running markup rules
-     * over it would eat a legitimate `<` an author typed.
+     * Only those fields: a LINE or TEXT field is plain text, and running markup
+     * rules over it would eat a legitimate `<` an author typed.
+     *
+     * The result carries the image addresses the allowlist would not take,
+     * because dropping one of those is the only removal here that loses
+     * something an author would miss — everything else the allowlist strips
+     * leaves its text behind. A save that quietly emptied an article of its
+     * pictures under «Збережено.» is the failure this reports on.
      *
      * @param array<string, string> $values     submitted, keyed by field name
      * @param list<string>          $htmlFields names of fields whose kind is HTML
-     *
-     * @return array<string, string>
      */
-    public function sanitizeValues(array $values, array $htmlFields): array
+    public function sanitizeValues(array $values, array $htmlFields): SanitizedContent
     {
+        $refused = [];
+
         foreach ($htmlFields as $name) {
             if (array_key_exists($name, $values)) {
-                $values[$name] = $this->sanitize($values[$name]);
+                $values[$name] = $this->clean($values[$name], $refused);
             }
         }
 
-        return $values;
+        return new SanitizedContent($values, array_values(array_unique($refused)));
     }
 
     /**
+     * The markup alone, for a caller with one document and no interest in what
+     * was refused.
+     *
      * @throws \InvalidArgumentException when the document is over {@see self::MAX_BYTES}
      */
     public function sanitize(string $html): string
+    {
+        $refused = [];
+
+        return $this->clean($html, $refused);
+    }
+
+    /**
+     * @param list<string> $refused image addresses this pass would not keep, appended to
+     *
+     * @throws \InvalidArgumentException when the document is over {@see self::MAX_BYTES}
+     */
+    private function clean(string $html, array &$refused): string
     {
         if (strlen($html) > self::MAX_BYTES) {
             // Refused whole rather than stored in part: half an article saved
@@ -106,7 +127,95 @@ final class ContentHtmlSanitizer
             ));
         }
 
-        return $this->dropEmptyFigures($this->dropForeignImages($this->sanitizer()->sanitize($html)));
+        // Read BEFORE sanitising. The allowlist permits only http and https as
+        // media schemes, so Symfony strips the `src` of a `data:` image outright
+        // — and what reaches dropForeignImages() is then an <img> with no src,
+        // which that method deliberately passes over in silence. A pasted
+        // screenshot therefore vanished under «Збережено.» with nothing said,
+        // which is the exact failure this reporting exists to prevent.
+        $this->noteRefusedSources($html, $refused);
+
+        return $this->dropEmptyFigures($this->dropForeignImages($this->sanitizer()->sanitize($html), $refused));
+    }
+
+    /**
+     * Name the image addresses this pass will not keep, from the markup as
+     * SUBMITTED.
+     *
+     * Asked of the raw document because the sanitizer answers part of the
+     * question destructively: a scheme it refuses is not rejected as an image,
+     * it is erased as an attribute, and an attribute that is gone cannot be
+     * reported. Whether a picture was dropped by the scheme allowlist or by our
+     * own ownership test is of no interest to the author — what they need is the
+     * address, so they can see which picture is about to disappear.
+     *
+     * Duplicates are harmless: {@see sanitizeValues()} reduces the list once at
+     * the end, so an address refused here and again downstream is named once.
+     *
+     * @param list<string> $refused appended to
+     */
+    private function noteRefusedSources(string $html, array &$refused): void
+    {
+        if (stripos($html, '<img') === false) {
+            return;
+        }
+
+        $sources = $this->sources();
+
+        foreach (self::imageSourcesIn($html) as $value) {
+            if ($value !== '' && !$sources->allows($value)) {
+                $refused[] = $value;
+            }
+        }
+    }
+
+    /**
+     * Every `src` a browser would load out of this markup.
+     *
+     * PARSED, not matched. The first version of this was a regular expression
+     * for `src="…"`, which reads exactly the one spelling our own editor
+     * produces and silently misses `src='…'` and bare `src=…` — measured, both
+     * returned nothing. That matters precisely here, because the markup this
+     * scans is PASTED FROM SOMEWHERE ELSE; the shapes our editor never writes
+     * are the shapes this function exists to catch, and a source it fails to
+     * see is an image that disappears from the article with no warning.
+     *
+     * `Dom\HTMLDocument` is the engine's spec-compliant HTML parser, so what it
+     * finds is what a browser would have loaded — which is the question being
+     * asked. No dependency: it ships with PHP 8.4.
+     *
+     * @return list<string>
+     */
+    private static function imageSourcesIn(string $html): array
+    {
+        // Wrapped so a fragment parses as body content, and LIBXML_NOERROR
+        // because malformed paste is the normal case here, not an event.
+        //
+        // NOT wrapped in a catch. The first version caught \Throwable and
+        // returned an empty list, which hid a ValueError raised by this very
+        // call — LIBXML_NONET is not an accepted flag here — and the pre-scan
+        // silently found nothing at all. A wrong argument is our defect and has
+        // to be loud; the parser itself is lenient by specification and does
+        // not throw on malformed markup, which is the only input this sees.
+        $document = \Dom\HTMLDocument::createFromString(
+            '<!DOCTYPE html><html><body>' . $html . '</body></html>',
+            LIBXML_NOERROR,
+        );
+
+        $found = [];
+
+        foreach ($document->getElementsByTagName('img') as $image) {
+            // `null`, not `''`, when the attribute is absent — this parser
+            // differs from the old DOMDocument there, and an <img> with no src
+            // is an ordinary input here rather than an edge case.
+            $src = trim($image->getAttribute('src') ?? '');
+
+            if ($src !== '') {
+                $found[] = $src;
+            }
+        }
+
+        return $found;
     }
 
     /**
@@ -134,25 +243,45 @@ final class ContentHtmlSanitizer
      * already reduced to the allowlist and the only attribute left to read is
      * one this class put there.
      */
-    private function dropForeignImages(string $html): string
+    /**
+     * @param list<string> $refused addresses of the images dropped here, appended to
+     */
+    private function dropForeignImages(string $html, array &$refused): string
     {
         if (!str_contains($html, '<img')) {
             return $html;
         }
 
+        $sources = $this->sources();
+
         return (string) preg_replace_callback(
             '#<img\b[^>]*>#i',
-            static function (array $match): string {
+            static function (array $match) use ($sources, &$refused): string {
+                // No src is not an image. Nothing is shown and nothing is lost,
+                // so it goes without being reported — a warning about markup
+                // that displayed nothing would train authors to ignore the
+                // warnings that matter.
                 if (preg_match('#\ssrc="([^"]*)"#i', $match[0], $src) !== 1) {
                     return '';
                 }
 
                 $value = html_entity_decode($src[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-                return preg_match(self::IMAGE_SRC, $value) === 1 ? $match[0] : '';
+                if ($sources->allows($value)) {
+                    return $match[0];
+                }
+
+                $refused[] = $value;
+
+                return '';
             },
             $html,
         );
+    }
+
+    private function sources(): ContentImageSources
+    {
+        return $this->sources ??= new ContentImageSources();
     }
 
     private function sanitizer(): HtmlSanitizer
@@ -182,12 +311,16 @@ final class ContentHtmlSanitizer
             // data loss, and the text was never the dangerous part.
             ->allowRelativeLinks()
             ->allowLinkSchemes(self::LINK_SCHEMES)
-            // An image may be relative and nothing else. No media schemes are
-            // allowed at all, so an absolute src never survives this config —
-            // the path check below is then a second gate on the shape, not the
-            // only thing standing between an article and a foreign host.
+            // An image may be relative, or it may name a host over http(s) —
+            // a deployment whose media sits on a CDN publishes exactly that,
+            // and refusing schemes outright meant such an installation could
+            // never keep a picture of its own. Which hosts and paths are ours
+            // is not a question this library can answer, so it is asked of
+            // ContentImageSources afterwards; letting the scheme through here
+            // makes that check the gate rather than a second opinion, and the
+            // foreign-source cases in the test suite are what hold it shut.
             ->allowRelativeMedias()
-            ->allowMediaSchemes([])
+            ->allowMediaSchemes(['http', 'https'])
             // Never truncate. The library's default cuts at 20 000 bytes and
             // returns the prefix as if it were the whole document; the size
             // rule is enforced in sanitize(), where it can be reported.
