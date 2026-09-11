@@ -93,6 +93,15 @@ final class ContentSaveHandler implements TypedHandlerInterface
             ?? self::malformedDate($before, $payload->submittedValues());
         $warning = null;
 
+        // Whether the author's text reached the record. Everything after that
+        // write — the metadata, the translation and SEO queues — is separate
+        // work on a store this handler cannot enrol in one transaction with the
+        // content. So a failure there must not be reported as a failed save:
+        // the text IS saved, and telling the author it is not sends them back
+        // to retype what is already there, or to hunt for damage that does not
+        // exist.
+        $contentSaved = false;
+
         try {
             if ($error === null) {
                 $clean = $this->sanitizer->sanitizeValues(
@@ -100,6 +109,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
                     self::htmlFieldNames($before),
                 );
                 $editor->save($ref, $clean->values);
+                $contentSaved = true;
                 // What the allowlist would not take. Said here rather than
                 // swallowed: an article emptied of its pictures under
                 // «Збережено.» is discovered by reopening it, which is the
@@ -113,9 +123,14 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 }
             }
         } catch (\InvalidArgumentException $e) {
-            $error = $e->getMessage();
+            [$error, $warning] = self::reportFailure($contentSaved, $warning, $e->getMessage(), $e->getMessage());
         } catch (\Throwable) {
-            $error = 'Не вдалося зберегти. Спробуйте ще раз.';
+            [$error, $warning] = self::reportFailure(
+                $contentSaved,
+                $warning,
+                'Не вдалося зберегти. Спробуйте ще раз.',
+                'Текст збережено, але метадані для пошуку — ні. Відкрийте запис і збережіть ще раз.',
+            );
         }
 
         // Reload rather than echo the submitted values back: what the record
@@ -134,6 +149,43 @@ final class ContentSaveHandler implements TypedHandlerInterface
             $error,
             $warning,
         ));
+    }
+
+    /**
+     * Where a failure belongs once the content is already in the record.
+     *
+     * The author's text is written first; the metadata, the translation queue
+     * and the SEO queue are separate work on a store this handler cannot enrol
+     * in one transaction with it. So the two halves fail differently and must
+     * be reported differently. Before the write, a failure means nothing was
+     * saved and the page says so. After it, the text IS saved — reporting that
+     * as «Не вдалося зберегти» sends the author back to retype what is already
+     * there, or to go looking for damage that does not exist, and the next
+     * thing they do is save again over their own good copy.
+     *
+     * @return array{?string, ?string} the error to show, and the warning
+     */
+    private static function reportFailure(
+        bool $contentSaved,
+        ?string $warning,
+        string $beforeTheWrite,
+        string $afterTheWrite,
+    ): array {
+        return $contentSaved
+            ? [null, self::alsoSay($warning, $afterTheWrite)]
+            : [$beforeTheWrite, $warning];
+    }
+
+    /**
+     * Add a second thing worth saying to the notice, keeping the first.
+     *
+     * Both halves matter and neither replaces the other: the pictures an
+     * allowlist refused and the metadata that did not save are separate facts
+     * about one save, and dropping either is how an author finds out later.
+     */
+    private static function alsoSay(?string $notice, string $addition): string
+    {
+        return $notice === null || $notice === '' ? $addition : $notice . ' ' . $addition;
     }
 
     /**
@@ -275,8 +327,18 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 continue;
             }
 
-            $submitted = trim($values[$field->name] ?? '');
+            $submitted = $values[$field->name] ?? '';
 
+            // Nothing entered at all. Whether that is allowed is
+            // missingRequired()'s question, not this one.
+            if (trim($submitted) === '') {
+                continue;
+            }
+
+            // Checked exactly as it will be STORED. Validating a trimmed copy
+            // while saving the original is how « 2026-09-11 » passed this gate
+            // and landed in the record with its spaces — where isCalendarDay(),
+            // the very same test, calls it malformed on the way back out.
             if (!ContentField::isCalendarDay($submitted)) {
                 return 'Поле «' . $field->label . '»: «' . $submitted . '» — не дата. Формат: РРРР-ММ-ДД.';
             }

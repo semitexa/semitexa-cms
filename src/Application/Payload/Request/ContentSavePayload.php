@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Payload\Request;
 
 use Semitexa\Authorization\Attribute\AsProtectedPayload;
+use Semitexa\Cms\Domain\Model\ContentSeo;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Request;
@@ -82,7 +83,11 @@ final class ContentSavePayload implements ValidatablePayloadInterface, OsContent
         $values = [];
 
         foreach ($group as $key => $value) {
-            if (is_string($key) && is_scalar($value)) {
+            // Only what the form actually offers. Every scalar key used to be
+            // accepted, which let a post set a field the editor has no control
+            // for — and setting one marks it authored, which stops generation
+            // from ever touching it again.
+            if (is_string($key) && in_array($key, ContentSeo::EDITOR_FIELDS, true) && is_scalar($value)) {
                 $values[$key] = (string) $value;
             }
         }

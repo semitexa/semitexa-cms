@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Tests\Unit;
 
+use Semitexa\Core\Request;
+use Semitexa\Cms\Application\Payload\Request\ContentSavePayload;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Application\Service\SeoStore;
 use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
+use Semitexa\Cms\Domain\Model\ContentSeo;
 use Semitexa\Orm\Domain\Model\ConnectionConfig;
 use Semitexa\Orm\OrmManager;
 
@@ -172,6 +175,53 @@ final class ContentSeoInTheEditorTest extends TestCase
     public function the_structured_data_graph_is_not_offered_as_a_field(): void
     {
         self::assertStringNotContainsString('name="seo[jsonLd]"', $this->render());
+    }
+
+    /**
+     * Not offering a field is not the same as refusing it.
+     *
+     * `jsonLd` has no control because it is built from the record — which made
+     * it the one field a crafted post could reach unopposed. Every scalar key
+     * under `seo[]` used to be accepted, and accepting one marks it AUTHORED:
+     * generation leaves an authored field alone, so the injected block would
+     * have stayed on that record for as long as it existed, with nothing on the
+     * page to explain where it came from or any way to clear it.
+     */
+    #[Test]
+    public function a_field_the_form_does_not_offer_is_refused_when_posted_anyway(): void
+    {
+        $payload = new ContentSavePayload();
+        $payload->setHttpRequest(new Request(
+            method: 'POST',
+            uri: '/os/app/cms/save',
+            headers: [],
+            query: [],
+            post: [
+                'seo' => [
+                    'title' => 'Справжнє поле',
+                    'jsonLd' => '{"@type":"Thing"}',
+                    'authored' => ['jsonLd'],
+                    'sourceHash' => 'forged',
+                ],
+            ],
+            server: [],
+            cookies: [],
+        ));
+
+        self::assertSame(['title' => 'Справжнє поле'], $payload->submittedSeo());
+    }
+
+    /** The form renders exactly the fields the request accepts — one list, not two. */
+    #[Test]
+    public function the_form_and_the_gate_agree_on_what_the_editor_owns(): void
+    {
+        $html = $this->render();
+
+        foreach (ContentSeo::EDITOR_FIELDS as $field) {
+            self::assertStringContainsString('name="seo[' . $field . ']"', $html);
+        }
+
+        self::assertNotContains('jsonLd', ContentSeo::EDITOR_FIELDS);
     }
 
     /**

@@ -33,6 +33,23 @@ final readonly class ContentSeo
     public const GENERATED_FIELDS = ['title', 'description', 'ogTitle', 'ogDescription', 'jsonLd'];
 
     /**
+     * The fields the editor puts on the form, and therefore the only ones a
+     * submission may set.
+     *
+     * `jsonLd` is deliberately absent: it is built from the record, there is no
+     * control for it, and nobody types it. That made it the one field a crafted
+     * post could reach unopposed — `seo[jsonLd]=…` went through
+     * {@see editorSubmission()} like any other key, and the value it set was
+     * then marked AUTHORED, which is permanent in effect: generation leaves an
+     * authored field alone, so the record would carry that block for as long as
+     * it existed and nothing on the page would explain where it came from.
+     *
+     * Read by the form that renders these fields and by the request that
+     * accepts them, so the two cannot disagree about what the editor owns.
+     */
+    public const EDITOR_FIELDS = ['title', 'description', 'ogTitle', 'ogDescription', 'ogImage', 'canonical', 'robots'];
+
+    /**
      * @param list<string> $authored names of fields a person set by hand
      */
     public function __construct(

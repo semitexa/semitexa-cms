@@ -267,6 +267,39 @@ final class ContentHtmlSanitizerTest extends TestCase
      * mid-tag, under a «Збережено.» message. Nothing in the stored value would
      * have told the author, and only reopening it would.
      */
+    /**
+     * A `data:` image is reported, not erased in silence.
+     *
+     * This is the case the reporting missed for the reason it was easiest to
+     * miss. The scheme allowlist permits http and https only, so Symfony does
+     * not reject the image — it removes the `src` attribute — and what the
+     * ownership pass then sees is an <img> with no source at all, which it
+     * deliberately says nothing about (markup that displayed nothing is not
+     * worth a warning). A pasted screenshot therefore disappeared under
+     * «Збережено.» with no notice naming it.
+     */
+    #[Test]
+    public function an_inline_data_image_is_named_rather_than_quietly_erased(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div><img src="data:image/png;base64,iVBORw0KGgo="></div>',
+        ], ['body']);
+
+        self::assertSame(['data:image/png;base64,iVBORw0KGgo='], $out->refusedImageSources);
+        self::assertStringNotContainsString('<img', $out->values['body']);
+        self::assertNotNull($out->notice());
+    }
+
+    /** An <img> that never carried a source is still not worth a warning. */
+    #[Test]
+    public function an_image_with_no_source_at_all_is_still_passed_over(): void
+    {
+        $out = $this->sanitizer->sanitizeValues(['body' => '<div><img alt="nothing"></div>'], ['body']);
+
+        self::assertSame([], $out->refusedImageSources);
+        self::assertNull($out->notice());
+    }
+
     #[Test]
     public function a_document_past_the_librarys_own_limit_survives_whole(): void
     {

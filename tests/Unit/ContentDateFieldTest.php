@@ -105,6 +105,36 @@ final class ContentDateFieldTest extends TestCase
     }
 
     /**
+     * A stored value the date control cannot represent is shown as text.
+     *
+     * `type="date"` does not display «2026-02-31» — it comes up EMPTY and
+     * submits an empty string. So an author who opened the record to fix a typo
+     * in the title would have cleared a date they never looked at, under
+     * «Збережено.», with nothing to indicate it. Rendered as text the bad value
+     * is visible, survives the round trip, and the save gate reports it as the
+     * malformed date it is.
+     */
+    #[Test]
+    public function a_stored_value_the_date_control_cannot_show_is_not_silently_cleared(): void
+    {
+        $html = (new ContentEditorPage())->render(
+            new ContentDraft(
+                ref: 'demo:article:x',
+                title: 'Подія',
+                fields: [
+                    ContentField::line('title', 'Заголовок', 'Подія', true),
+                    ContentField::date('starts_on', 'Починається', '2026-02-31'),
+                ],
+            ),
+            'token',
+        );
+
+        self::assertStringNotContainsString('<input type="date" name="starts_on"', $html);
+        self::assertStringContainsString('name="starts_on" value="2026-02-31"', $html);
+        self::assertStringContainsString('aria-invalid="true"', $html);
+    }
+
+    /**
      * The optional end, which is the whole reason a range is two fields: the
      * `required` flag already says it, so nothing has to invent an encoding
      * that puts two days behind one control.

@@ -46,6 +46,12 @@ final class ContentEditorPage
      *
      * @var array<string, array{0: string, 1: string}> field => [label, hint]
      */
+    /**
+     * Label and hint for each field the editor owns. The KEYS are not declared
+     * here — they are {@see ContentSeo::EDITOR_FIELDS}, which is also what the
+     * request accepts, so the form and the gate cannot drift into disagreeing
+     * about which fields an author may set.
+     */
     private const SEO_FIELDS = [
         'title' => ['Заголовок у пошуку', ''],
         'description' => ['Опис у пошуку', 'Приблизно 160 символів — далі Google обрізає.'],
@@ -410,7 +416,8 @@ HTML;
         }
 
         $fields = '';
-        foreach (self::SEO_FIELDS as $name => [$label, $hint]) {
+        foreach (ContentSeo::EDITOR_FIELDS as $name) {
+            [$label, $hint] = self::SEO_FIELDS[$name];
             $fields .= $this->seoField($seo, $name, $label, $hint);
         }
 
@@ -471,7 +478,16 @@ HTML;
             // standalone HTML in an iframe with neither Twig nor that runtime.
             // Pulling the kit in for one field would cost the page its
             // independence to gain a picker the platform already provides.
-            ContentField::DATE => '<input type="date" name="' . $name . '" value="' . $value . '"' . $required . '>',
+            // A value the browser's date input cannot represent is rendered as
+            // text instead. `type="date"` refuses «2026-02-31» outright: the
+            // control comes up EMPTY and submits an empty string, so an author
+            // who came to fix a typo in the title would have silently cleared a
+            // stored date they never looked at. Shown as text, the bad value is
+            // visible, survives the round trip, and the save gate reports it.
+            ContentField::DATE => ContentField::isCalendarDay($field->value)
+                ? '<input type="date" name="' . $name . '" value="' . $value . '"' . $required . '>'
+                : '<input type="text" name="' . $name . '" value="' . $value . '"'
+                    . $required . ' aria-invalid="true" pattern="\d{4}-\d{2}-\d{2}">',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
             // The RAW id: imageControl() escapes it itself, and escaping twice
             // posts 'a&b' back as 'a&amp;b' — the value changes on every save.

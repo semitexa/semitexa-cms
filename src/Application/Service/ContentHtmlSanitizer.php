@@ -127,7 +127,52 @@ final class ContentHtmlSanitizer
             ));
         }
 
+        // Read BEFORE sanitising. The allowlist permits only http and https as
+        // media schemes, so Symfony strips the `src` of a `data:` image outright
+        // — and what reaches dropForeignImages() is then an <img> with no src,
+        // which that method deliberately passes over in silence. A pasted
+        // screenshot therefore vanished under «Збережено.» with nothing said,
+        // which is the exact failure this reporting exists to prevent.
+        $this->noteRefusedSources($html, $refused);
+
         return $this->dropEmptyFigures($this->dropForeignImages($this->sanitizer()->sanitize($html), $refused));
+    }
+
+    /**
+     * Name the image addresses this pass will not keep, from the markup as
+     * SUBMITTED.
+     *
+     * Asked of the raw document because the sanitizer answers part of the
+     * question destructively: a scheme it refuses is not rejected as an image,
+     * it is erased as an attribute, and an attribute that is gone cannot be
+     * reported. Whether a picture was dropped by the scheme allowlist or by our
+     * own ownership test is of no interest to the author — what they need is the
+     * address, so they can see which picture is about to disappear.
+     *
+     * Duplicates are harmless: {@see sanitizeValues()} reduces the list once at
+     * the end, so an address refused here and again downstream is named once.
+     *
+     * @param list<string> $refused appended to
+     */
+    private function noteRefusedSources(string $html, array &$refused): void
+    {
+        if (!str_contains($html, '<img')) {
+            return;
+        }
+
+        if (preg_match_all('#<img\b[^>]*\ssrc="([^"]*)"#i', $html, $matches) === 0) {
+            return;
+        }
+
+        $sources = $this->sources();
+
+        foreach ($matches[1] as $raw) {
+            $value = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+            if ($value !== '' && !$sources->allows($value)) {
+                $refused[] = $value;
+            }
+        }
     }
 
     /**
