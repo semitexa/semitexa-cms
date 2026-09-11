@@ -95,7 +95,15 @@ final class ContentSaveReportingTest extends TestCase
         self::assertNull($this->malformedDate($draft, ['starts_on' => '2026-09-11']));
     }
 
-    /** Whether an empty field is allowed is the required check's question, not this one. */
+    /**
+     * Nothing entered is the EXACT empty string — what a blank date input
+     * submits, and what a missing field resolves to. Whether that is allowed is
+     * the required check's question, not this one.
+     *
+     * Whitespace is not nothing. « » is a value the record would store, and
+     * skipping it here would put spaces in a date column through the very gate
+     * that exists to keep them out.
+     */
     #[Test]
     public function nothing_entered_is_not_a_malformed_date(): void
     {
@@ -106,7 +114,9 @@ final class ContentSaveReportingTest extends TestCase
         );
 
         self::assertNull($this->malformedDate($draft, ['starts_on' => '']));
-        self::assertNull($this->malformedDate($draft, ['starts_on' => '   ']));
         self::assertNull($this->malformedDate($draft, []));
+
+        self::assertNotNull($this->malformedDate($draft, ['starts_on' => '   ']));
+        self::assertNotNull($this->malformedDate($draft, ['starts_on' => "\t"]));
     }
 }

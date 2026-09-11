@@ -156,23 +156,66 @@ final class ContentHtmlSanitizer
      */
     private function noteRefusedSources(string $html, array &$refused): void
     {
-        if (!str_contains($html, '<img')) {
-            return;
-        }
-
-        if (preg_match_all('#<img\b[^>]*\ssrc="([^"]*)"#i', $html, $matches) === 0) {
+        if (stripos($html, '<img') === false) {
             return;
         }
 
         $sources = $this->sources();
 
-        foreach ($matches[1] as $raw) {
-            $value = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
+        foreach (self::imageSourcesIn($html) as $value) {
             if ($value !== '' && !$sources->allows($value)) {
                 $refused[] = $value;
             }
         }
+    }
+
+    /**
+     * Every `src` a browser would load out of this markup.
+     *
+     * PARSED, not matched. The first version of this was a regular expression
+     * for `src="…"`, which reads exactly the one spelling our own editor
+     * produces and silently misses `src='…'` and bare `src=…` — measured, both
+     * returned nothing. That matters precisely here, because the markup this
+     * scans is PASTED FROM SOMEWHERE ELSE; the shapes our editor never writes
+     * are the shapes this function exists to catch, and a source it fails to
+     * see is an image that disappears from the article with no warning.
+     *
+     * `Dom\HTMLDocument` is the engine's spec-compliant HTML parser, so what it
+     * finds is what a browser would have loaded — which is the question being
+     * asked. No dependency: it ships with PHP 8.4.
+     *
+     * @return list<string>
+     */
+    private static function imageSourcesIn(string $html): array
+    {
+        // Wrapped so a fragment parses as body content, and LIBXML_NOERROR
+        // because malformed paste is the normal case here, not an event.
+        //
+        // NOT wrapped in a catch. The first version caught \Throwable and
+        // returned an empty list, which hid a ValueError raised by this very
+        // call — LIBXML_NONET is not an accepted flag here — and the pre-scan
+        // silently found nothing at all. A wrong argument is our defect and has
+        // to be loud; the parser itself is lenient by specification and does
+        // not throw on malformed markup, which is the only input this sees.
+        $document = \Dom\HTMLDocument::createFromString(
+            '<!DOCTYPE html><html><body>' . $html . '</body></html>',
+            LIBXML_NOERROR,
+        );
+
+        $found = [];
+
+        foreach ($document->getElementsByTagName('img') as $image) {
+            // `null`, not `''`, when the attribute is absent — this parser
+            // differs from the old DOMDocument there, and an <img> with no src
+            // is an ordinary input here rather than an edge case.
+            $src = trim($image->getAttribute('src') ?? '');
+
+            if ($src !== '') {
+                $found[] = $src;
+            }
+        }
+
+        return $found;
     }
 
     /**

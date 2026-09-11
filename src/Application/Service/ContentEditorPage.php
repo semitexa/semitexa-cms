@@ -479,7 +479,13 @@ HTML;
             // Pulling the kit in for one field would cost the page its
             // independence to gain a picker the platform already provides.
             // A value the browser's date input cannot represent is rendered as
-            // text instead. `type="date"` refuses «2026-02-31» outright: the
+            // text instead — and as text with NO `pattern`, for the same reason
+            // this page never puts a real `required` attribute on a drawer
+            // field: constraint validation refuses the submit from a control
+            // the author may not be able to see. A collapsed properties panel
+            // is `display:none`, the browser cannot focus what it is objecting
+            // to, and the save becomes a button that does nothing. The gate is
+            // ContentSaveHandler::malformedDate(), which names the field. `type="date"` refuses «2026-02-31» outright: the
             // control comes up EMPTY and submits an empty string, so an author
             // who came to fix a typo in the title would have silently cleared a
             // stored date they never looked at. Shown as text, the bad value is
@@ -487,7 +493,7 @@ HTML;
             ContentField::DATE => ContentField::isCalendarDay($field->value)
                 ? '<input type="date" name="' . $name . '" value="' . $value . '"' . $required . '>'
                 : '<input type="text" name="' . $name . '" value="' . $value . '"'
-                    . $required . ' aria-invalid="true" pattern="\d{4}-\d{2}-\d{2}">',
+                    . $required . ' aria-invalid="true">',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
             // The RAW id: imageControl() escapes it itself, and escaping twice
             // posts 'a&b' back as 'a&amp;b' — the value changes on every save.

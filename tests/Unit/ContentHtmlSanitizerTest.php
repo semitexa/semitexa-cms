@@ -290,6 +290,36 @@ final class ContentHtmlSanitizerTest extends TestCase
         self::assertNotNull($out->notice());
     }
 
+    /**
+     * Every spelling of `src` a browser would load, not only the one our own
+     * editor writes.
+     *
+     * This scan exists for markup PASTED FROM SOMEWHERE ELSE, so the shapes
+     * Trix never produces are exactly the shapes it has to catch. A regular
+     * expression for `src="…"` read the one form we generate and returned
+     * nothing for the other two — measured, both silently missed — which meant
+     * a pasted image vanished from the article with no warning naming it.
+     */
+    #[Test]
+    public function a_foreign_source_is_found_however_it_is_quoted(): void
+    {
+        $out = $this->sanitizer->sanitizeValues([
+            'body' => '<div>'
+                . '<img src="https://a.test/double.png">'
+                . "<img src='https://b.test/single.png'>"
+                . '<img src=https://c.test/bare.png>'
+                . '<IMG SRC="https://d.test/upper.png">'
+                . '</div>',
+        ], ['body']);
+
+        self::assertSame([
+            'https://a.test/double.png',
+            'https://b.test/single.png',
+            'https://c.test/bare.png',
+            'https://d.test/upper.png',
+        ], $out->refusedImageSources);
+    }
+
     /** An <img> that never carried a source is still not worth a warning. */
     #[Test]
     public function an_image_with_no_source_at_all_is_still_passed_over(): void

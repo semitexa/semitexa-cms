@@ -179,8 +179,22 @@ final class ContentSeoHeadTest extends TestCase
         $this->head->apply('demo:article:welcome');
         $html = $this->head->extraTags();
 
+        self::assertStringContainsString(
+            '<script type="application/ld+json">',
+            $html,
+            'the graph is emitted rather than dropped — otherwise the rest proves nothing',
+        );
         self::assertStringNotContainsString('</script><script>', $html);
-        self::assertStringContainsString('<', $html, 'the angle bracket is escaped, not stripped');
+
+        // The exact escaped headline, not merely "an angle bracket appears
+        // somewhere". The document always contains `<script …>`, so asserting
+        // on `<` alone passed whether or not the payload survived at all —
+        // a test that could not fail either way.
+        self::assertStringContainsString(
+            '\u003C/script\u003E\u003Cscript\u003Ealert(1)\u003C/script\u003E',
+            $html,
+            'JSON_HEX_TAG escapes the brackets and keeps the text',
+        );
     }
 
     /** Structured data a crawler cannot parse is a liability; absence is not. */

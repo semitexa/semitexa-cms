@@ -329,9 +329,14 @@ final class ContentSaveHandler implements TypedHandlerInterface
 
             $submitted = $values[$field->name] ?? '';
 
-            // Nothing entered at all. Whether that is allowed is
-            // missingRequired()'s question, not this one.
-            if (trim($submitted) === '') {
+            // Nothing entered at all — the exact empty string, which is what a
+            // date input submits when it is blank and what a missing field
+            // resolves to. NOT a trimmed test: «   » is something the record
+            // would actually store, and skipping it here would put whitespace
+            // in a date column through the very gate that exists to stop it.
+            // Whether an empty value is allowed is missingRequired()'s
+            // question, not this one.
+            if ($submitted === '') {
                 continue;
             }
 
