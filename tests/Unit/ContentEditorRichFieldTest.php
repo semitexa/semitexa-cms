@@ -38,6 +38,31 @@ final class ContentEditorRichFieldTest extends TestCase
     }
 
     /**
+     * A site's own editor looked for text colour and a font, did not find them,
+     * and asked where they were. They are not missing — they are refused,
+     * because the skin owns appearance so a site looks like itself on every
+     * page. A decision made and never explained reads exactly like a bug, and
+     * this line is the difference between the two.
+     */
+    #[Test]
+    public function the_writing_surface_says_where_appearance_comes_from(): void
+    {
+        $html = $this->render([ContentField::html('body', 'Текст', '<p>Hi</p>')]);
+
+        self::assertStringContainsString('Колір і шрифт бере оформлення сайту', $html);
+    }
+
+    #[Test]
+    public function a_draft_with_no_rich_field_carries_no_such_note(): void
+    {
+        // It is a property of the writing surface, not of the page: a record
+        // edited entirely through lines and dates has nothing to explain.
+        $html = $this->render([ContentField::line('title', 'Назва', 'Hi')]);
+
+        self::assertStringNotContainsString('оформлення сайту', $html);
+    }
+
+    /**
      * The value lives in an ATTRIBUTE, so it must be attribute-escaped. Leaking
      * a raw tag here would end the attribute early and put author content into
      * the markup as markup — the editor would be the injection point it exists

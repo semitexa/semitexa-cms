@@ -14,7 +14,7 @@ use Semitexa\Cms\Domain\Contract\ContentEditorInterface;
  *
  * ## The committed set
  *
- * These five, and a module may rely on exactly this list. Each row says what
+ * These six, and a module may rely on exactly this list. Each row says what
  * the console RENDERS and, more importantly, what the value looks like when it
  * arrives at {@see \Semitexa\Cms\Domain\Contract\ContentEditorInterface::save()},
  * because that is the half a module has to store:
@@ -26,6 +26,8 @@ use Semitexa\Cms\Domain\Contract\ContentEditorInterface;
  * | `HTML`  | the rich editor      | markup ALREADY reduced to the CMS allowlist     |
  * | `IMAGE` | a picker + preview   | a media asset id, or `''` when cleared          |
  * | `DATE`  | a native date picker | `YYYY-MM-DD`, or `''` when cleared              |
+ * | `BLOCKS`| a page of blocks     | ONE opaque string the CMS owns and the module    |
+ * |         |                      | never parses — see the constant                 |
  *
  * Every one of them is a string, because {@see ContentEditorInterface::save()}
  * takes `array<string, string>` and every module already implements it. A
@@ -35,12 +37,17 @@ use Semitexa\Cms\Domain\Contract\ContentEditorInterface;
  *
  * ## What is deliberately NOT here
  *
- * A relation, a repeater, a list of anything. Those are not a missing widget,
- * they are a different contract: each needs a value that is not a string, and
- * adding one as a general-purpose escape hatch — a JSON blob in a textarea —
- * would make the console a worse editor than the SQL it replaced. When one is
- * genuinely needed it arrives as a declared kind with its own value type and
- * its own migration of the save contract, not by widening this one.
+ * A relation, a list of OTHER RECORDS, anything whose value is not a string.
+ * Those are a different contract, and adding one as a general-purpose escape
+ * hatch — a JSON blob in a textarea an author types into — would make the
+ * console a worse editor than the SQL it replaced.
+ *
+ * {@see self::BLOCKS} is not that escape hatch and is worth being precise
+ * about, because this paragraph used to predict it would need a contract
+ * migration and it did not. The author never sees the encoding; the CMS owns
+ * it end to end; the module stores an opaque string exactly as it already
+ * stores an asset id for an IMAGE. The prediction was right about the shape
+ * and wrong about the price.
  *
  * An unknown kind is not an error: the editor falls back to a textarea, which
  * degrades to something an author can still use rather than to a blank space.
@@ -50,6 +57,29 @@ final readonly class ContentField
     public const LINE = 'line';
     public const TEXT = 'text';
     public const HTML = 'html';
+
+    /**
+     * A page as an ordered list of blocks, carried as ONE string the CMS owns.
+     *
+     * The kind this docblock said would have to arrive one day, and the reason
+     * it can ride the existing contract after all: the value is opaque to the
+     * module, exactly as {@see self::IMAGE}'s asset id is. The module stores a
+     * string it never parses; {@see \Semitexa\Cms\Application\Service\ContentBlockCodec}
+     * owns what it means. So save(array<string, string>) is untouched and no
+     * module that implements the editor contract changes.
+     *
+     * What this buys is the thing a rich-text field could not hold: LAYOUT. A
+     * block carries where it sits and how large it is, as named choices the
+     * skin renders — measured against the vendored editor, Trix 2.1.19 parses a
+     * block attribute value and serialises it away, so an author who aligned a
+     * paragraph lost it on the next save. Here no editor is ever handed the
+     * layout.
+     *
+     * A value that is not in this format is not an error: it is a page written
+     * before the format existed, and the codec reads it as one text block
+     * holding exactly what was there.
+     */
+    public const BLOCKS = 'blocks';
 
     /**
      * A single image, carried as a MEDIA ASSET ID and nothing else.
@@ -105,6 +135,11 @@ final readonly class ContentField
     public static function line(string $name, string $label, string $value = '', bool $required = false, string $hint = ''): self
     {
         return new self($name, $label, $value, self::LINE, $required, $hint);
+    }
+
+    public static function blocks(string $name, string $label, string $value = '', bool $required = false, string $hint = ''): self
+    {
+        return new self($name, $label, $value, self::BLOCKS, $required, $hint);
     }
 
     public static function text(string $name, string $label, string $value = '', bool $required = false, string $hint = ''): self

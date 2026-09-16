@@ -107,6 +107,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 $clean = $this->sanitizer->sanitizeValues(
                     $payload->submittedValues(),
                     self::htmlFieldNames($before),
+                    self::blockFieldNames($before),
                 );
                 $editor->save($ref, $clean->values);
                 $contentSaved = true;
@@ -400,9 +401,27 @@ final class ContentSaveHandler implements TypedHandlerInterface
      */
     private static function htmlFieldNames(ContentDraft $draft): array
     {
+        return self::fieldNamesOfKind($draft, ContentField::HTML);
+    }
+
+    /**
+     * The BLOCKS fields, so the sanitiser can clean the markup inside each
+     * block. A page format the allowlist did not know about would have been a
+     * way around it.
+     *
+     * @return list<string>
+     */
+    private static function blockFieldNames(ContentDraft $draft): array
+    {
+        return self::fieldNamesOfKind($draft, ContentField::BLOCKS);
+    }
+
+    /** @return list<string> */
+    private static function fieldNamesOfKind(ContentDraft $draft, string $kind): array
+    {
         $names = [];
         foreach ($draft->fields as $field) {
-            if ($field->kind === ContentField::HTML) {
+            if ($field->kind === $kind) {
                 $names[] = $field->name;
             }
         }

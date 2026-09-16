@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Application\Service;
 
+use Semitexa\Cms\Domain\Model\ContentBlock;
 use Semitexa\Cms\Domain\Model\SanitizedContent;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -81,10 +82,16 @@ final class ContentHtmlSanitizer
      * leaves its text behind. A save that quietly emptied an article of its
      * pictures under «Збережено.» is the failure this reports on.
      *
-     * @param array<string, string> $values     submitted, keyed by field name
-     * @param list<string>          $htmlFields names of fields whose kind is HTML
+     * A BLOCKS field is cleaned the same way and block by block: its value is a
+     * page the CMS owns, and the text inside each block is markup an author
+     * wrote, so it faces exactly the allowlist a single rich field faces. A
+     * format the sanitiser did not know about would have been a way around it.
+     *
+     * @param array<string, string> $values      submitted, keyed by field name
+     * @param list<string>          $htmlFields  names of fields whose kind is HTML
+     * @param list<string>          $blockFields names of fields whose kind is BLOCKS
      */
-    public function sanitizeValues(array $values, array $htmlFields): SanitizedContent
+    public function sanitizeValues(array $values, array $htmlFields, array $blockFields = []): SanitizedContent
     {
         $refused = [];
 
@@ -94,7 +101,37 @@ final class ContentHtmlSanitizer
             }
         }
 
+        foreach ($blockFields as $name) {
+            if (array_key_exists($name, $values)) {
+                $values[$name] = $this->cleanBlocks($values[$name], $refused);
+            }
+        }
+
         return new SanitizedContent($values, array_values(array_unique($refused)));
+    }
+
+    /**
+     * Every text block through the same allowlist, the page back in one piece.
+     *
+     * A picture block holds an asset id and no markup, so it passes untouched —
+     * and an id that is not one is a question for the media service, not for an
+     * HTML allowlist.
+     *
+     * @param list<string> $refused accumulated by reference, so a dropped image
+     *        inside a block is reported exactly as one in a rich field is
+     */
+    private function cleanBlocks(string $value, array &$refused): string
+    {
+        $codec = new ContentBlockCodec();
+
+        $clean = [];
+        foreach ($codec->decode($value) as $block) {
+            $clean[] = $block->isText()
+                ? ContentBlock::text($this->clean($block->payload, $refused), $block->layout)
+                : $block;
+        }
+
+        return $clean === [] ? '' : $codec->encode($clean);
     }
 
     /**

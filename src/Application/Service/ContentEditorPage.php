@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Cms\Domain\Model\ContentDraft;
+use Semitexa\Cms\Domain\Model\BlockLayout;
+use Semitexa\Cms\Domain\Model\ContentBlock;
 use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Cms\Domain\Model\ContentSeo;
@@ -83,7 +85,12 @@ final class ContentEditorPage
         // decide, on every visit, which of them today's work is about.
         [$titleField, $bodyField, $rest] = self::split($draft->fields);
 
-        $rich = $bodyField !== null && $bodyField->kind === ContentField::HTML;
+        // ANY field that needs the editor, not only an HTML body: a BLOCKS
+        // field holds one Trix editor per passage, and a rich field can sit in
+        // the panel as well as on the canvas. Keying this off the body alone
+        // shipped a page of blocks with no editor loaded at all — the controls
+        // rendered and nothing could be typed into them.
+        $rich = self::needsRichEditor($draft->fields);
         $richHead = $rich ? $this->richEditorHead() : '';
         $shellJs = $this->escape(AssetManager::getUrl('js/content-shell.js', 'cms'));
 
@@ -117,15 +124,11 @@ final class ContentEditorPage
         $bodyControl = '';
         if ($bodyField !== null) {
             $bodyControl = '<div class="writing">'
-                . ($rich
-                    ? $this->richControl(
-                        $this->escape($bodyField->name),
-                        $this->escape($bodyField->value),
-                        $bodyField->required ? ' required' : '',
-                        self::positionOf($draft->fields, $bodyField),
-                    )
-                    : '<textarea class="plain" name="' . $this->escape($bodyField->name) . '"'
-                        . ($bodyField->required ? ' required' : '') . '>' . $this->escape($bodyField->value) . '</textarea>')
+                . $this->bodyControl($bodyField, self::positionOf($draft->fields, $bodyField))
+                // Once per page, and here rather than inside a control: it is a
+                // property of having a writing surface at all, and a draft with
+                // two rich fields would otherwise say it twice.
+                . (self::isWritingSurface($bodyField) ? self::APPEARANCE_NOTE : '')
                 . '</div>';
         }
 
@@ -300,7 +303,11 @@ HTML;
                 $title = $field;
                 continue;
             }
-            if ($body === null && $field->kind === ContentField::HTML) {
+            // A page of blocks is the thing itself just as a rich field is.
+            // Recognising only HTML here put a BLOCKS body behind
+            // «Властивості» — the page's own content in a settings drawer,
+            // which every test passed while the editor was wrong.
+            if ($body === null && ($field->kind === ContentField::HTML || $field->kind === ContentField::BLOCKS)) {
                 $body = $field;
             }
         }
@@ -495,6 +502,13 @@ HTML;
                 : '<input type="text" name="' . $name . '" value="' . $value . '"'
                     . $required . ' aria-invalid="true">',
             ContentField::HTML => $this->richControl($name, $value, $required, $position),
+            ContentField::BLOCKS => (new ContentBlocksControl())->render(
+                $field->name,
+                $field->value,
+                $required,
+                $position,
+                fn (string $assetId): string => $this->blockPicker($assetId),
+            ),
             // The RAW id: imageControl() escapes it itself, and escaping twice
             // posts 'a&b' back as 'a&amp;b' — the value changes on every save.
             ContentField::IMAGE => $this->imageControl($name, $field->previewUrl(), $field->value, $required),
@@ -536,8 +550,14 @@ HTML;
         $preview = '<img class="cover__img" src="' . $previewUrl . '" alt=""' . ($has ? '' : ' hidden') . '>';
         $empty = '<span class="cover__empty"' . ($has ? ' hidden' : '') . '>Немає зображення</span>';
 
+        // A block's picture has no NAME: the page submits through one input the
+        // console writes, and a named input here would arrive in
+        // submittedValues() as a field no module declared. content-shell.js
+        // finds this input by type, not by name, so the picker still works.
+        $nameAttr = $name === '' ? '' : ' name="' . $name . '"';
+
         return '<div class="cover" data-cover="' . $name . '">'
-            . '<input type="hidden" name="' . $name . '" value="' . $this->escape($assetId) . '"' . $required . '>'
+            . '<input type="hidden"' . $nameAttr . ' value="' . $this->escape($assetId) . '"' . $required . '>'
             . '<div class="cover__frame">' . $preview . $empty . '</div>'
             . '<div class="cover__acts">'
             // Visually hidden rather than `hidden`: the attribute takes the input
@@ -578,6 +598,22 @@ HTML;
         return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '" value="' . $escapedValue . '"' . $required . '>'
             . '<trix-editor input="' . $id . '" class="rich"></trix-editor>';
     }
+
+    /**
+     * Where appearance comes from, said once, under the writing surface.
+     *
+     * A site's own editor looked for text colour and a font, did not find
+     * them, and asked. They are not missing — they are REFUSED, because this
+     * framework has a skin system so a site looks like itself on every page,
+     * and a colour picker in an editor undoes that one paragraph at a time.
+     *
+     * A decision made and never explained reads exactly like a bug. This is
+     * the sentence that separates the two, and it costs nothing: it is not a
+     * control, it is the reason there is no control.
+     */
+    private const APPEARANCE_NOTE =
+        '<p class="hint">Колір і шрифт бере оформлення сайту — так кожна сторінка виглядає однаково,'
+        . ' і зміна оформлення міняє їх усюди разом.</p>';
 
     /**
      * Stylesheet, script and CSP nonce for the vendored editor.
@@ -641,11 +677,75 @@ CSS;
         // those fire on events the bundle dispatches.
         $wiring = $this->escape(AssetManager::getUrl('js/content-editor.js', 'cms'));
 
+        // The page-of-blocks half. Separate file because it is a different
+        // job — content-editor.js is the upload pipeline for ONE editor, this
+        // one keeps a list of them and the single input they submit through in
+        // step. Loaded together because a draft can hold both kinds of field.
+        $blocks = $this->escape(AssetManager::getUrl('js/content-blocks.js', 'cms'));
+
         return $meta
             . '<link rel="stylesheet" href="' . $css . '">' . "\n"
             . $skin . "\n"
             . '<script src="' . $js . '" defer' . ScriptNonceSource::attribute() . '></script>' . "\n"
-            . '<script src="' . $wiring . '" defer' . ScriptNonceSource::attribute() . '></script>';
+            . '<script src="' . $wiring . '" defer' . ScriptNonceSource::attribute() . '></script>' . "\n"
+            . '<script src="' . $blocks . '" defer' . ScriptNonceSource::attribute() . '></script>';
+    }
+
+    /** The control the body's own kind asks for. */
+    private function bodyControl(ContentField $field, int $position): string
+    {
+        $required = $field->required ? ' required' : '';
+
+        return match ($field->kind) {
+            ContentField::BLOCKS => (new ContentBlocksControl())->render(
+                $field->name,
+                $field->value,
+                $required,
+                $position,
+                fn (string $assetId): string => $this->blockPicker($assetId),
+            ),
+            ContentField::HTML => $this->richControl(
+                $this->escape($field->name),
+                $this->escape($field->value),
+                $required,
+                $position,
+            ),
+            default => '<textarea class="plain" name="' . $this->escape($field->name) . '"'
+                . $required . '>' . $this->escape($field->value) . '</textarea>',
+        };
+    }
+
+    /** True when the author writes MARKUP into it, whichever shape it takes. */
+    private static function isWritingSurface(ContentField $field): bool
+    {
+        return $field->kind === ContentField::HTML || $field->kind === ContentField::BLOCKS;
+    }
+
+    /** The picker a block's image uses — the editor page owns how one looks. */
+    private function blockPicker(string $assetId): string
+    {
+        return $this->imageControl(
+            '',
+            $assetId === '' ? '' : '/os/app/cms/media/' . rawurlencode($assetId),
+            $assetId,
+            '',
+        );
+    }
+
+    /**
+     * Does anything on this page need the vendored editor loaded?
+     *
+     * @param list<ContentField> $fields
+     */
+    private static function needsRichEditor(array $fields): bool
+    {
+        foreach ($fields as $field) {
+            if ($field->kind === ContentField::HTML || $field->kind === ContentField::BLOCKS) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function escape(string $value): string
