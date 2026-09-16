@@ -16,11 +16,6 @@
 
   var FORMAT = 'semitexa.cms.blocks/v1';
 
-  function fieldOf(node) {
-    var list = node.closest('[data-blocks]');
-    return list ? document.getElementById(list.getAttribute('data-blocks')) : null;
-  }
-
   function listOf(node) {
     return node.closest('[data-blocks]');
   }
@@ -76,39 +71,36 @@
     field.value = blocks.length === 0 ? '' : JSON.stringify({ format: FORMAT, blocks: blocks });
   }
 
+  // From the server-rendered <template> for that kind, NOT from an existing
+  // block: cloning a sibling means an empty page can never gain its first
+  // block, and a page holding only text can never gain a picture — both
+  // buttons just do nothing, which reads as a broken console.
   function newBlock(list, kind) {
-    var template = list.querySelector('[data-block-kind="' + kind + '"]');
-    if (template) {
-      var copy = template.cloneNode(true);
-      reset(copy, kind);
-      return copy;
-    }
-    return null;
+    var template = list.parentNode.querySelector('[data-block-template="' + kind + '"]');
+    if (!template) return null;
+
+    var copy = template.content.firstElementChild.cloneNode(true);
+    bindFreshEditor(copy);
+
+    return copy;
   }
 
-  // A cloned block must not carry the previous one's content: the author asked
-  // for another block, not for a duplicate of this one.
-  function reset(article, kind) {
-    article.querySelectorAll('input').forEach(function (input) {
-      if (input.hasAttribute('data-block-alt') || input.type === 'hidden') {
-        input.value = '';
-      }
-    });
+  // A cloned passage needs an id of its own. Trix binds by getElementById, so
+  // two passages sharing one would write into a single value and the author
+  // would lose a paragraph without a word.
+  function bindFreshEditor(article) {
+    var old = article.querySelector('trix-editor');
+    var input = article.querySelector('input[type="hidden"]');
+    if (!old || !input) return;
 
-    if (kind === 'text') {
-      var old = article.querySelector('trix-editor');
-      var input = article.querySelector('input[type="hidden"]');
-      if (old && input) {
-        // A unique id, or Trix binds the new editor to the first input with
-        // that id and two passages write into one value.
-        var id = 'blk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-        input.id = id;
-        var editor = document.createElement('trix-editor');
-        editor.setAttribute('input', id);
-        editor.className = old.className;
-        old.parentNode.replaceChild(editor, old);
-      }
-    }
+    var id = 'blk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    input.id = id;
+    input.value = '';
+
+    var editor = document.createElement('trix-editor');
+    editor.setAttribute('input', id);
+    editor.className = old.className;
+    old.parentNode.replaceChild(editor, old);
   }
 
   document.addEventListener('click', function (event) {

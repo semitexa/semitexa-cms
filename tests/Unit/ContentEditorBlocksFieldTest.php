@@ -30,6 +30,23 @@ final class ContentEditorBlocksFieldTest extends TestCase
         ModuleAssetRegistry::setModuleRegistry(new ModuleRegistry());
     }
 
+    /**
+     * Only the blocks an author can see and touch.
+     *
+     * The control also renders an inert <template> per kind, so that an empty
+     * page can gain its first block — counting across the whole document would
+     * count those too, and the assertions below are about what is on screen.
+     */
+    private function liveBlocks(string $html): string
+    {
+        $start = strpos($html, '<div class="blocks"');
+        $end = strpos($html, '<template', $start === false ? 0 : $start);
+
+        self::assertNotFalse($start, 'the blocks list must be rendered');
+
+        return $end === false ? substr($html, $start) : substr($html, $start, $end - $start);
+    }
+
     private function render(string $value): string
     {
         $draft = new ContentDraft('demo:page:1', 'Сторінка', [
@@ -60,10 +77,12 @@ final class ContentEditorBlocksFieldTest extends TestCase
             ContentBlock::text('<div>Другий</div>'),
         ]));
 
-        self::assertSame(2, substr_count($html, '<article class="block"'));
-        self::assertSame(2, substr_count($html, '<trix-editor'));
-        self::assertSame(2, substr_count($html, 'data-block-remove'));
-        self::assertSame(2, substr_count($html, 'data-block-move="up"'));
+        $live = $this->liveBlocks($html);
+
+        self::assertSame(2, substr_count($live, '<article class="block"'));
+        self::assertSame(2, substr_count($live, '<trix-editor'));
+        self::assertSame(2, substr_count($live, 'data-block-remove'));
+        self::assertSame(2, substr_count($live, 'data-block-move="up"'));
     }
 
     #[Test]
@@ -100,7 +119,7 @@ final class ContentEditorBlocksFieldTest extends TestCase
         // their back.
         $html = $this->render('<div>Стаття, написана до блоків</div>');
 
-        self::assertSame(1, substr_count($html, '<article class="block"'));
+        self::assertSame(1, substr_count($this->liveBlocks($html), '<article class="block"'));
         self::assertStringContainsString('Стаття, написана до блоків', $html);
     }
 
@@ -171,6 +190,19 @@ final class ContentEditorBlocksFieldTest extends TestCase
         if ($panel !== false) {
             self::assertLessThan($panel, $blocks, 'and before the settings drawer');
         }
+    }
+
+    #[Test]
+    public function an_empty_page_still_offers_a_block_to_add(): void
+    {
+        // The review finding, at the level where it is cheapest to pin: without
+        // a template there is nothing to clone, and both add buttons do nothing
+        // on a page that has no blocks yet.
+        $html = $this->render('');
+
+        self::assertSame(0, substr_count($this->liveBlocks($html), '<article class="block"'));
+        self::assertStringContainsString('<template data-block-template="text">', $html);
+        self::assertStringContainsString('<template data-block-template="image">', $html);
     }
 
     #[Test]

@@ -47,10 +47,37 @@ final class ContentBlocksControl
         return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '"'
             . ' value="' . $this->escape($value) . '"' . $required . '>'
             . '<div class="blocks" data-blocks="' . $id . '">' . $blocks . '</div>'
+            . $this->templates($id, $picker)
             . '<div class="blocks__add">'
             . '<button type="button" class="ghost" data-block-add="text">+ Текст</button>'
             . '<button type="button" class="ghost" data-block-add="image">+ Зображення</button>'
             . '</div>';
+    }
+
+    /**
+     * An empty block of each kind, for the client to clone.
+     *
+     * Because the alternative does not work, and it took a review pass to see
+     * it: cloning an EXISTING block means an empty page can never gain its
+     * first one, and a page holding only text can never gain a picture. Both
+     * buttons simply do nothing, which reads as a broken console.
+     *
+     * A <template> is inert until inserted, so the editor inside it does not
+     * upgrade, does not bind, and costs nothing until an author asks for it.
+     *
+     * @param callable(string): string $picker
+     */
+    private function templates(string $fieldId, callable $picker): string
+    {
+        $out = '';
+
+        foreach ([ContentBlock::text(''), ContentBlock::image('')] as $blank) {
+            $out .= '<template data-block-template="' . $blank->kind . '">'
+                . $this->blockEditor($fieldId, -1, $blank, $picker)
+                . '</template>';
+        }
+
+        return $out;
     }
 
     /**
