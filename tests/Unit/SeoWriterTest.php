@@ -195,6 +195,24 @@ final class SeoWriterTest extends TestCase
         self::assertStringNotContainsString('<p>', $this->lastSystemPrompt);
     }
 
+    #[Test]
+    public function paragraphs_do_not_run_into_each_other_on_the_way_to_the_model(): void
+    {
+        // strip_tags() joins what was on either side of the tag it removes, so
+        // two paragraphs arrived as one word with no space in it.
+        $draft = new ContentDraft(
+            ref: 'page:about',
+            title: 'About',
+            fields: [ContentField::html('body', 'Body', '<p>First</p><p>Second</p><ul><li>Third</li></ul>')],
+            publicUrl: 'https://example.org/about',
+        );
+
+        $this->writer('{"description":"d"}')->write(new ContentSeo(ref: 'page:about'), $draft, 'h');
+
+        self::assertStringContainsString('First Second Third', $this->lastSystemPrompt);
+        self::assertStringNotContainsString('FirstSecond', $this->lastSystemPrompt);
+    }
+
     private function draft(): ContentDraft
     {
         return new ContentDraft(

@@ -190,10 +190,19 @@ final class SeoWriter
         return mb_substr(implode("\n", $parts), 0, self::BODY_LIMIT);
     }
 
-    /** Markup out, one line of words in. */
+    /**
+     * Markup out, one line of words in — with the boundaries kept.
+     *
+     * strip_tags() removes a tag and joins what was on either side of it, so
+     * `<p>First</p><p>Second</p>` reached the model as `FirstSecond`. Block
+     * elements and line breaks become a space first; the run-collapse below
+     * tidies up after.
+     */
     private function readable(string $html): string
     {
-        return trim((string) preg_replace('/\s+/u', ' ', strip_tags($html)));
+        $spaced = preg_replace('~</?(?:p|div|br|li|ul|ol|h[1-6]|blockquote|figure|figcaption|tr|td|th)\b[^>]*>~iu', ' ', $html);
+
+        return trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) $spaced)));
     }
 
     /**

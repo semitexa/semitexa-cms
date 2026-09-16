@@ -160,7 +160,16 @@ final class CmsMapCheckCommand extends BaseCommand
         );
 
         if ($written === false) {
-            $output->writeln(sprintf('<error>Could not write the snapshot to %s</error>', $path));
+            // In --json mode the caller's only channel is machine-readable, and
+            // a bare sentence there is a parse error at the other end. The
+            // artifact says what went wrong in the shape the reader expects.
+            $output->writeln($json
+                ? (string) json_encode([
+                    'artifact' => 'semitexa.cms.map-check/v1',
+                    'clean' => false,
+                    'error' => sprintf('Could not write the snapshot to %s', $path),
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : sprintf('<error>Could not write the snapshot to %s</error>', $path));
 
             return false;
         }
@@ -205,7 +214,7 @@ final class CmsMapCheckCommand extends BaseCommand
         // A problem is a finding, not a failure of the command: the exit code
         // says whether the MAP is sound, which is what a release gate or a
         // post-move step wants to branch on.
-        return $problemCount === 0 ? Command::SUCCESS : Command::FAILURE;
+        return self::verdict($problemCount, $changes);
     }
 
     /**
@@ -216,7 +225,7 @@ final class CmsMapCheckCommand extends BaseCommand
     {
         $output->writeln((string) json_encode([
             'artifact' => 'semitexa.cms.map-check/v1',
-            'clean' => $problemCount === 0,
+            'clean' => self::verdict($problemCount, $changes) === Command::SUCCESS,
             'problems' => $problemCount,
             'sites' => $sites,
             'changes' => array_map(
@@ -228,7 +237,31 @@ final class CmsMapCheckCommand extends BaseCommand
             ),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-        return $problemCount === 0 ? Command::SUCCESS : Command::FAILURE;
+        return self::verdict($problemCount, $changes);
+    }
+
+    /**
+     * Sound means BOTH halves: no place the console cannot open, and nothing
+     * the comparison found.
+     *
+     * A change was not counted before, so `--compare` could report a whole
+     * site gone and still exit 0 — the fix that taught it to reach the
+     * comparison at all would have been wasted, because the script branching
+     * on the exit code would have carried on regardless.
+     *
+     * @param array<string, list<MapChangeRecord>> $changes
+     */
+    private static function verdict(int $problemCount, array $changes): int
+    {
+        $changed = false;
+        foreach ($changes as $records) {
+            if ($records !== []) {
+                $changed = true;
+                break;
+            }
+        }
+
+        return $problemCount === 0 && !$changed ? Command::SUCCESS : Command::FAILURE;
     }
 
     private function nothingToCheck(OutputInterface $output, bool $json): int
