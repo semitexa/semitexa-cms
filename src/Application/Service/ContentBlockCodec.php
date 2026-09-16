@@ -36,6 +36,15 @@ final class ContentBlockCodec
     /** @param list<ContentBlock> $blocks */
     public function encode(array $blocks): string
     {
+        // An empty page is the EMPTY STRING, which is what decode() reads back
+        // as an empty page. Encoding it as a marked document with no blocks
+        // made the pair asymmetric: decode() refuses an empty `blocks` list and
+        // falls back to one text block, so a stored `encode([])` came back as
+        // a page whose words were its own JSON.
+        if ($blocks === []) {
+            return '';
+        }
+
         $payload = [
             'format' => self::MARKER,
             'blocks' => array_map(static fn (ContentBlock $b): array => $b->toArray(), array_values($blocks)),
@@ -112,16 +121,26 @@ final class ContentBlockCodec
             return null;
         }
 
-        $payload = $raw['payload'] ?? '';
-        if (!is_string($payload)) {
+        // A MISSING payload is not an empty one. Read as '', the block came
+        // back as a blank passage and the next save wrote that blankness over
+        // whatever the document actually held.
+        if (!array_key_exists('payload', $raw) || !is_string($raw['payload'])) {
             return null;
         }
+
+        $payload = $raw['payload'];
 
         $layout = is_array($raw['layout'] ?? null) ? $raw['layout'] : [];
         $align = is_string($layout['align'] ?? null) ? $layout['align'] : null;
         $size = is_string($layout['size'] ?? null) ? $layout['size'] : null;
 
-        $alt = is_string($raw['alt'] ?? null) ? $raw['alt'] : '';
+        // Present but not a string is a document this cannot read, not a
+        // description to quietly drop.
+        if (array_key_exists('alt', $raw) && !is_string($raw['alt'])) {
+            return null;
+        }
+
+        $alt = (string) ($raw['alt'] ?? '');
 
         return ($raw['kind'] ?? ContentBlock::TEXT) === ContentBlock::IMAGE
             ? ContentBlock::image($payload, $alt, BlockLayout::of($align, $size))

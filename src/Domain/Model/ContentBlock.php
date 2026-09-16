@@ -60,7 +60,10 @@ final readonly class ContentBlock
     /** A block with nothing in it is not a block: an empty passage renders as a gap nobody meant. */
     public function isEmpty(): bool
     {
-        return trim(strip_tags($this->payload)) === '' && !str_contains($this->payload, '<img');
+        // stripos: HTML tag names are case-insensitive, and an image-only
+        // block written with <IMG> read as empty — the renderer then dropped
+        // the whole block, picture and all.
+        return trim(strip_tags($this->payload)) === '' && stripos($this->payload, '<img') === false;
     }
 
     public function withLayout(BlockLayout $layout): self

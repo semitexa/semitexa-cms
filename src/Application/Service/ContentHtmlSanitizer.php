@@ -139,7 +139,13 @@ final class ContentHtmlSanitizer
                 : $block;
         }
 
-        return $clean === [] ? '' : $codec->encode($clean);
+        // Checked again on the ENCODED result: a legacy value just under the
+        // limit becomes one block plus a JSON envelope, and the value that
+        // actually gets stored is the one the limit is about.
+        $encoded = $clean === [] ? '' : $codec->encode($clean);
+        $this->refuseIfTooLarge($encoded);
+
+        return $encoded;
     }
 
     /**

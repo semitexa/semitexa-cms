@@ -98,17 +98,22 @@ final class CmsMapCheckCommand extends BaseCommand
             ];
         }
 
-        $snapshot = (string) ($input->getOption('snapshot') ?? '');
-        if ($snapshot !== '' && !$this->writeSnapshot($snapshot, $sites, $output, $json)) {
-            return Command::FAILURE;
-        }
-
+        // READ BEFORE WRITE. `--snapshot=x --compare=x` is a reasonable thing
+        // to type — take the new picture where the old one lives — and writing
+        // first replaced the baseline before anything had read it: the
+        // comparison then reported no changes, and the record of what the map
+        // used to be was gone.
         $changes = [];
         if ($compare !== '') {
             $changes = $this->compareWith($compare, $sites, $output);
             if ($changes === null) {
                 return Command::FAILURE;
             }
+        }
+
+        $snapshot = (string) ($input->getOption('snapshot') ?? '');
+        if ($snapshot !== '' && !$this->writeSnapshot($snapshot, $sites, $output, $json)) {
+            return Command::FAILURE;
         }
 
         return $json
@@ -154,10 +159,15 @@ final class CmsMapCheckCommand extends BaseCommand
      */
     private function writeSnapshot(string $path, array $sites, OutputInterface $output, bool $json): bool
     {
-        $written = @file_put_contents(
-            $path,
-            (string) json_encode($sites, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        // SUBSTITUTE rather than a silent ''. json_encode() returns false on
+        // a byte it cannot represent, and the string cast turned that into an
+        // empty file reported as a successful snapshot.
+        $encoded = json_encode(
+            $sites,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
         );
+
+        $written = $encoded === false ? false : @file_put_contents($path, $encoded);
 
         if ($written === false) {
             // In --json mode the caller's only channel is machine-readable, and
