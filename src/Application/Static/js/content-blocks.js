@@ -16,8 +16,15 @@
 
   var FORMAT = 'semitexa.cms.blocks/v1';
 
+  // The list this node belongs to — from INSIDE it, or from anywhere else in
+  // the same field. Never from the document: two blocks fields on one page
+  // would both answer, and the first one always won.
   function listOf(node) {
-    return node.closest('[data-blocks]');
+    var inside = node.closest('[data-blocks]');
+    if (inside) return inside;
+
+    var field = node.closest('.blocks-field');
+    return field ? field.querySelector('[data-blocks]') : null;
   }
 
   function blocksIn(list) {
@@ -76,7 +83,8 @@
   // block, and a page holding only text can never gain a picture — both
   // buttons just do nothing, which reads as a broken console.
   function newBlock(list, kind) {
-    var template = list.parentNode.querySelector('[data-block-template="' + kind + '"]');
+    var field = list.closest('.blocks-field');
+    var template = field ? field.querySelector('[data-block-template="' + kind + '"]') : null;
     if (!template) return null;
 
     var copy = template.content.firstElementChild.cloneNode(true);
@@ -111,7 +119,7 @@
 
     event.preventDefault();
 
-    var list = listOf(target) || document.querySelector('[data-blocks]');
+    var list = listOf(target);
     if (!list) return;
 
     if (target.hasAttribute('data-block-add')) {

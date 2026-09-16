@@ -122,6 +122,14 @@ final class ContentHtmlSanitizer
      */
     private function cleanBlocks(string $value, array &$refused): string
     {
+        // The LIMIT IS THE FIELD'S, not each passage's. Checked here because
+        // what follows takes the value apart: every payload can sit under
+        // MAX_BYTES while the page they make up is several times over it, and
+        // the per-payload check inside clean() would pass all of them. The
+        // stored value is this whole string, so this whole string is what the
+        // limit is about.
+        $this->refuseIfTooLarge($value);
+
         $codec = new ContentBlockCodec();
 
         $clean = [];
@@ -148,21 +156,33 @@ final class ContentHtmlSanitizer
     }
 
     /**
+     * The one size gate, shared by a rich document and a whole blocks field.
+     *
+     * @throws \InvalidArgumentException when the value is over {@see self::MAX_BYTES}
+     */
+    private function refuseIfTooLarge(string $value): void
+    {
+        if (strlen($value) <= self::MAX_BYTES) {
+            return;
+        }
+
+        // Refused whole rather than stored in part: half an article saved
+        // under a success message is worse than a save that did not happen.
+        throw new \InvalidArgumentException(sprintf(
+            'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
+            (int) ceil(strlen($value) / 1024),
+            (int) (self::MAX_BYTES / 1024),
+        ));
+    }
+
+    /**
      * @param list<string> $refused image addresses this pass would not keep, appended to
      *
      * @throws \InvalidArgumentException when the document is over {@see self::MAX_BYTES}
      */
     private function clean(string $html, array &$refused): string
     {
-        if (strlen($html) > self::MAX_BYTES) {
-            // Refused whole rather than stored in part: half an article saved
-            // under a success message is worse than a save that did not happen.
-            throw new \InvalidArgumentException(sprintf(
-                'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
-                (int) ceil(strlen($html) / 1024),
-                (int) (self::MAX_BYTES / 1024),
-            ));
-        }
+        $this->refuseIfTooLarge($html);
 
         // Read BEFORE sanitising. The allowlist permits only http and https as
         // media schemes, so Symfony strips the `src` of a `data:` image outright

@@ -66,7 +66,14 @@ final class CmsMapCheckCommand extends BaseCommand
         $integrity = new SiteMapIntegrity();
 
         $providers = $this->projector->providers();
-        if ($providers === []) {
+        $compare = (string) ($input->getOption('compare') ?? '');
+
+        // No providers is "nothing to check" only when nobody asked what
+        // CHANGED. With --compare it is the loudest answer the command has: a
+        // map that used to exist and does not any more is SiteGone, and
+        // returning early here meant the single-site case — the common one —
+        // could never report it. It said "nothing to check" and exited 0.
+        if ($providers === [] && $compare === '') {
             return $this->nothingToCheck($output, $json);
         }
 
@@ -92,12 +99,11 @@ final class CmsMapCheckCommand extends BaseCommand
         }
 
         $snapshot = (string) ($input->getOption('snapshot') ?? '');
-        if ($snapshot !== '') {
-            $this->writeSnapshot($snapshot, $sites, $output, $json);
+        if ($snapshot !== '' && !$this->writeSnapshot($snapshot, $sites, $output, $json)) {
+            return Command::FAILURE;
         }
 
         $changes = [];
-        $compare = (string) ($input->getOption('compare') ?? '');
         if ($compare !== '') {
             $changes = $this->compareWith($compare, $sites, $output);
             if ($changes === null) {
@@ -135,19 +141,35 @@ final class CmsMapCheckCommand extends BaseCommand
         return (new SiteMapDiff())->between($before, $sites);
     }
 
-    /** @param array<string, mixed> $sites */
-    private function writeSnapshot(string $path, array $sites, OutputInterface $output, bool $json): void
+    /**
+     * False when the snapshot did not reach the disk.
+     *
+     * The caller turns that into a failing exit code, and the message is
+     * printed in JSON mode too. The whole point of `--snapshot` is that a
+     * later `--compare` has something to read: a migration script that takes
+     * the snapshot, sees a 0, moves the pages and then finds no file has lost
+     * the only record of what the map looked like before.
+     *
+     * @param array<string, mixed> $sites
+     */
+    private function writeSnapshot(string $path, array $sites, OutputInterface $output, bool $json): bool
     {
         $written = @file_put_contents(
             $path,
             (string) json_encode($sites, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         );
 
-        if (!$json) {
-            $output->writeln($written === false
-                ? sprintf('<error>Could not write the snapshot to %s</error>', $path)
-                : sprintf('Snapshot written to <info>%s</info>', $path));
+        if ($written === false) {
+            $output->writeln(sprintf('<error>Could not write the snapshot to %s</error>', $path));
+
+            return false;
         }
+
+        if (!$json) {
+            $output->writeln(sprintf('Snapshot written to <info>%s</info>', $path));
+        }
+
+        return true;
     }
 
     /**

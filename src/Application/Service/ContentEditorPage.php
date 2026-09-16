@@ -524,7 +524,15 @@ HTML;
         // Same reason as the rich field: the control an author clicks is not a
         // labelable element, so a <label> would forward the click somewhere
         // surprising.
-        if ($field->kind === ContentField::HTML || $field->kind === ContentField::IMAGE) {
+        // BLOCKS is the same case and then some: the control is a list of
+        // passages, each with its own labels, selects and buttons. Wrapped in
+        // one outer <label> those nest, and every click anywhere in the page
+        // body is forwarded to whichever labelable control happens to come
+        // first — which is a move-up button, not the editor.
+        if ($field->kind === ContentField::HTML
+            || $field->kind === ContentField::IMAGE
+            || $field->kind === ContentField::BLOCKS
+        ) {
             return '<div class="field"><span>' . $label . '</span>' . $control . $hint . '</div>';
         }
 

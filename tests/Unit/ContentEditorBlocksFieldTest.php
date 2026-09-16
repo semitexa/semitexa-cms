@@ -58,6 +58,75 @@ final class ContentEditorBlocksFieldTest extends TestCase
     }
 
     #[Test]
+    public function a_second_blocks_field_gets_its_own_wrapper_and_its_own_buttons(): void
+    {
+        // The parts of this control used to be siblings, so an add button had
+        // no element meaning "my field": the client fell back to the first
+        // [data-blocks] in the DOCUMENT and «+ Текст» in the second field wrote
+        // into the first. The wrapper is what makes the association exist.
+        $codec = new ContentBlockCodec();
+        $draft = new ContentDraft('demo:page:1', 'Сторінка', [
+            ContentField::blocks('body', 'Текст', $codec->encode([ContentBlock::text('<div>Тіло</div>')])),
+            ContentField::blocks('aside', 'Збоку', $codec->encode([ContentBlock::text('<div>Збоку</div>')])),
+        ]);
+
+        $html = (new ContentEditorPage())->render($draft, 'csrf-token');
+
+        self::assertSame(2, substr_count($html, 'class="blocks-field"'), 'one wrapper per field');
+        self::assertSame(2, substr_count($html, 'class="blocks__add"'));
+        self::assertStringContainsString('name="body"', $html);
+        self::assertStringContainsString('name="aside"', $html);
+
+        // Each wrapper holds exactly one list and both templates, so nothing
+        // inside it has to reach out to the document to find its own parts.
+        foreach ($this->wrappers($html) as $wrapper) {
+            self::assertSame(1, substr_count($wrapper, 'data-blocks='));
+            self::assertSame(1, substr_count($wrapper, 'data-block-template="text"'));
+            self::assertSame(1, substr_count($wrapper, 'data-block-template="image"'));
+            self::assertSame(1, substr_count($wrapper, 'data-block-add="text"'));
+        }
+    }
+
+    #[Test]
+    public function a_blocks_field_that_is_not_the_body_is_not_wrapped_in_a_label(): void
+    {
+        // The BODY field is rendered by the writing path and was always fine.
+        // A SECOND blocks field goes through the ordinary field path, which
+        // wrapped everything but HTML and IMAGE in a <label> — and a label
+        // forwards a click anywhere inside it to the first labelable control
+        // it contains. Here that is a move-up button, so clicking the passage
+        // pressed it.
+        $codec = new ContentBlockCodec();
+        $draft = new ContentDraft('demo:page:1', 'Сторінка', [
+            ContentField::blocks('body', 'Текст', $codec->encode([ContentBlock::text('<div>Тіло</div>')])),
+            ContentField::blocks('aside', 'Збоку', $codec->encode([ContentBlock::text('<div>Збоку</div>')])),
+        ]);
+
+        $html = (new ContentEditorPage())->render($draft, 'csrf-token');
+
+        self::assertStringContainsString('<div class="field"><span>Збоку</span>', $html);
+        self::assertStringNotContainsString('<label><span>Збоку</span>', $html);
+
+        $aside = $this->wrappers($html)[1];
+        self::assertStringContainsString('name="aside"', $aside);
+    }
+
+    /** @return list<string> */
+    private function wrappers(string $html): array
+    {
+        $out = [];
+        $offset = 0;
+
+        while (($at = strpos($html, 'class="blocks-field"', $offset)) !== false) {
+            $next = strpos($html, 'class="blocks-field"', $at + 1);
+            $out[] = substr($html, $at, $next === false ? null : $next - $at);
+            $offset = $at + 1;
+        }
+
+        return $out;
+    }
+
+    #[Test]
     public function the_page_submits_through_exactly_one_named_input(): void
     {
         $html = $this->render((new ContentBlockCodec())->encode([

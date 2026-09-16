@@ -127,6 +127,27 @@ final class BlocksGoThroughTheAllowlistTest extends TestCase
     }
 
     #[Test]
+    public function theLimitIsTheFieldsAndNotEachPassages(): void
+    {
+        // Every payload can sit under the limit while the page they make up is
+        // several times over it. The per-payload check inside clean() passes
+        // all of them, so the gate has to be on the value that gets STORED —
+        // which is the whole encoded document.
+        $passage = '<p>' . str_repeat('a', 60_000) . '</p>';
+        $value = $this->codec->encode([
+            ContentBlock::text($passage),
+            ContentBlock::text($passage),
+            ContentBlock::text($passage),
+            ContentBlock::text($passage),
+        ]);
+
+        self::assertGreaterThan(200_000, strlen($value), 'the fixture has to actually be over the limit');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->sanitizer->sanitizeValues(['body' => $value], [], ['body']);
+    }
+
+    #[Test]
     public function anEmptyPageStaysEmptyRatherThanBecomingAnEncodedNothing(): void
     {
         $clean = $this->sanitizer->sanitizeValues(['body' => ''], [], ['body']);

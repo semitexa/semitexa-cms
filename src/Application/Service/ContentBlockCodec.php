@@ -77,13 +77,22 @@ final class ContentBlockCodec
         $blocks = [];
         foreach ($decoded['blocks'] as $raw) {
             $block = $this->blockFrom($raw);
-            if ($block !== null) {
-                $blocks[] = $block;
+
+            // ONE unreadable block is enough to keep the whole string. Taking
+            // the readable ones and dropping the rest looks tidier and is how
+            // a page loses a paragraph: the author opens it, sees what
+            // survived, saves for some unrelated reason, and the dropped block
+            // is gone from storage for good. Preserving the value is the
+            // promise this codec makes, and a partial read does not keep it.
+            if ($block === null) {
+                return $this->asOneBlock($trimmed);
             }
+
+            $blocks[] = $block;
         }
 
-        // Every block unreadable, and a value that claimed to be ours: keep the
-        // string rather than open an empty page.
+        // A value that claimed to be ours and carried no blocks at all: keep
+        // the string rather than open an empty page.
         return $blocks === [] ? $this->asOneBlock($trimmed) : $blocks;
     }
 

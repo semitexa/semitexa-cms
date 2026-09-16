@@ -94,6 +94,25 @@ final class ContentBlockCodecTest extends TestCase
     }
 
     #[Test]
+    public function oneUnreadableBlockKeepsTheWholeDocument(): void
+    {
+        // The dangerous shape is the MIXED one. Taking the readable blocks and
+        // dropping the rest opens a page that looks almost right, and the next
+        // save — for any reason at all — writes the shortened version back and
+        // the dropped passage is gone from storage for good. Preserving the
+        // value is the promise; a partial read does not keep it.
+        $mixed = '{"format":"semitexa.cms.blocks/v1","blocks":['
+            . '{"kind":"text","payload":"<p>Kept</p>"},'
+            . '{"kind":"text","payload":{"not":"a string"}}'
+            . ']}';
+
+        $blocks = $this->codec->decode($mixed);
+
+        self::assertCount(1, $blocks);
+        self::assertSame($mixed, $blocks[0]->payload, 'the original document, not the half that parsed');
+    }
+
+    #[Test]
     public function anEmptyValueIsAnEmptyPageAndNotOneEmptyBlock(): void
     {
         self::assertSame([], $this->codec->decode(''));

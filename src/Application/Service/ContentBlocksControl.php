@@ -44,13 +44,21 @@ final class ContentBlocksControl
             $blocks .= $this->blockEditor($id, $index, $block, $picker);
         }
 
-        return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '"'
+        // ONE wrapper around the whole control, and it is load-bearing rather
+        // than decoration. The parts used to be siblings, so an add button had
+        // no element that meant "my field": the client fell back to the first
+        // `[data-blocks]` in the DOCUMENT, and on a page declaring two blocks
+        // fields every «+ Текст» wrote into the first one. The same wrapper
+        // scopes the <template> lookup, which had the same reach.
+        return '<div class="blocks-field">'
+            . '<input id="' . $id . '" type="hidden" name="' . $escapedName . '"'
             . ' value="' . $this->escape($value) . '"' . $required . '>'
             . '<div class="blocks" data-blocks="' . $id . '">' . $blocks . '</div>'
             . $this->templates($id, $picker)
             . '<div class="blocks__add">'
             . '<button type="button" class="ghost" data-block-add="text">+ Текст</button>'
             . '<button type="button" class="ghost" data-block-add="image">+ Зображення</button>'
+            . '</div>'
             . '</div>';
     }
 
