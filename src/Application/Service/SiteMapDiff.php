@@ -33,8 +33,14 @@ final class SiteMapDiff
 
         foreach ($after as $siteRef => $site) {
             $siteRef = (string) $siteRef;
+            // BOTH sides guarded. A snapshot is a file somebody can edit, and
+            // the reader before this only checks that it parses as JSON — a
+            // site that came back as a string was then indexed with ['places']
+            // and PHP 8.4 raised a TypeError before any report was written.
+            $previous = $before[$siteRef] ?? [];
+
             $changes[$siteRef] = $this->forSite(
-                $this->byRef((array) (($before[$siteRef] ?? [])['places'] ?? [])),
+                $this->byRef((array) ((is_array($previous) ? $previous : [])['places'] ?? [])),
                 $this->byRef((array) ((is_array($site) ? $site : [])['places'] ?? [])),
             );
         }

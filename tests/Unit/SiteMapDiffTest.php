@@ -147,4 +147,19 @@ final class SiteMapDiffTest extends TestCase
         self::assertCount(1, $changes);
         self::assertSame('regmus:page:1', $changes[0]->ref);
     }
+
+    #[Test]
+    public function a_snapshot_site_that_is_not_a_map_does_not_crash_the_report(): void
+    {
+        // The snapshot is a file somebody can edit, and the reader only checks
+        // that it parses as JSON. A site that came back as a string used to be
+        // indexed with ['places'] and PHP raised a TypeError before any report
+        // was written — the comparison died instead of reporting.
+        $changes = (new SiteMapDiff())->between(
+            ['regmus' => 'not a map at all'],
+            ['regmus' => ['places' => [['ref' => 'page:about', 'title' => 'About']]]],
+        );
+
+        self::assertArrayHasKey('regmus', $changes);
+    }
 }
