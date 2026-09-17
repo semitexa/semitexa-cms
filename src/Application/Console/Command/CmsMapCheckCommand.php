@@ -105,7 +105,7 @@ final class CmsMapCheckCommand extends BaseCommand
         // used to be was gone.
         $changes = [];
         if ($compare !== '') {
-            $changes = $this->compareWith($compare, $sites, $output);
+            $changes = $this->compareWith($compare, $sites, $output, $json);
             if ($changes === null) {
                 return Command::FAILURE;
             }
@@ -125,11 +125,11 @@ final class CmsMapCheckCommand extends BaseCommand
      * @param array<string, mixed> $sites
      * @return array<string, list<\Semitexa\Cms\Domain\Model\MapChangeRecord>>|null null when the snapshot cannot be read
      */
-    private function compareWith(string $path, array $sites, OutputInterface $output): ?array
+    private function compareWith(string $path, array $sites, OutputInterface $output, bool $json = false): ?array
     {
         $raw = @file_get_contents($path);
         if ($raw === false) {
-            $output->writeln(sprintf('<error>Cannot read the snapshot at %s</error>', $path));
+            $this->fail($output, $json, sprintf('Cannot read the snapshot at %s', $path));
 
             return null;
         }
@@ -138,7 +138,7 @@ final class CmsMapCheckCommand extends BaseCommand
             /** @var array<string, mixed> $before */
             $before = (array) json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
-            $output->writeln(sprintf('<error>The snapshot at %s is not readable JSON: %s</error>', $path, $e->getMessage()));
+            $this->fail($output, $json, sprintf('The snapshot at %s is not readable JSON: %s', $path, $e->getMessage()));
 
             return null;
         }
@@ -170,16 +170,7 @@ final class CmsMapCheckCommand extends BaseCommand
         $written = $encoded === false ? false : @file_put_contents($path, $encoded);
 
         if ($written === false) {
-            // In --json mode the caller's only channel is machine-readable, and
-            // a bare sentence there is a parse error at the other end. The
-            // artifact says what went wrong in the shape the reader expects.
-            $output->writeln($json
-                ? (string) json_encode([
-                    'artifact' => 'semitexa.cms.map-check/v1',
-                    'clean' => false,
-                    'error' => sprintf('Could not write the snapshot to %s', $path),
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                : sprintf('<error>Could not write the snapshot to %s</error>', $path));
+            $this->fail($output, $json, sprintf('Could not write the snapshot to %s', $path));
 
             return false;
         }
@@ -248,6 +239,25 @@ final class CmsMapCheckCommand extends BaseCommand
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         return self::verdict($problemCount, $changes);
+    }
+
+    /**
+     * Say what went wrong in the shape the caller is reading.
+     *
+     * EVERY failure path, not just the snapshot write. In `--json` mode the
+     * caller's only channel is machine-readable, and a bare sentence there is
+     * a parse error at the other end — an unreadable snapshot used to end the
+     * run with `<error>` text and no artifact at all.
+     */
+    private function fail(OutputInterface $output, bool $json, string $message): void
+    {
+        $output->writeln($json
+            ? (string) json_encode([
+                'artifact' => 'semitexa.cms.map-check/v1',
+                'clean' => false,
+                'error' => $message,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : sprintf('<error>%s</error>', $message));
     }
 
     /**

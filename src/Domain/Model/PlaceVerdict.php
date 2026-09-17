@@ -41,6 +41,17 @@ enum PlaceVerdict: string
     /** Its parent is not on the map, so nothing links to it. */
     case OrphanParent = 'orphan_parent';
 
+    /**
+     * The place exists, its parent exists, and the SITE cannot reach it.
+     *
+     * OrphanParent only answers "is there a parent record": a place hanging
+     * from nothing, or two places naming each other, satisfied that and were
+     * reported Reachable — so the console offered a link nobody could arrive
+     * at by navigating. Reachability is a walk from the root, not a look at
+     * one edge.
+     */
+    case Unreachable = 'unreachable';
+
     /** Two places claim the same ref, so one of them is unreachable by ref. */
     case DuplicateRef = 'duplicate_ref';
 

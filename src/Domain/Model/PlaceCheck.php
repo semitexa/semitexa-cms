@@ -86,6 +86,11 @@ final readonly class PlaceCheck
                 $this->ref,
                 (string) $this->parentRef,
             ),
+            PlaceVerdict::Unreachable => sprintf(
+                '%s (%s) opens, and the site cannot be walked to it — nothing links down to it from the root',
+                $this->title,
+                $this->ref,
+            ),
             PlaceVerdict::DuplicateRef => sprintf(
                 '%s claims the ref "%s", which another place already claims',
                 $this->title,

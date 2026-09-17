@@ -63,24 +63,30 @@ final class ContentBlockCodec
     /** @return list<ContentBlock> */
     public function decode(string $value): array
     {
+        // TRIMMED decides; the ORIGINAL is what gets kept. The promise this
+        // codec makes is that a page written before the format comes back byte
+        // for byte, and handing the trimmed copy to asOneBlock() quietly ate
+        // the leading and trailing whitespace of every legacy value — a
+        // difference the author never made, written back on the next save.
+        // Whitespace-only input is the exception, and it is an empty page.
         $trimmed = trim($value);
         if ($trimmed === '') {
             return [];
         }
 
         if (!str_contains($trimmed, self::MARKER)) {
-            return $this->asOneBlock($trimmed);
+            return $this->asOneBlock($value);
         }
 
         try {
             /** @var array<string, mixed> $decoded */
             $decoded = (array) json_decode($trimmed, true, 64, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            return $this->asOneBlock($trimmed);
+            return $this->asOneBlock($value);
         }
 
         if (($decoded['format'] ?? null) !== self::MARKER || !is_array($decoded['blocks'] ?? null)) {
-            return $this->asOneBlock($trimmed);
+            return $this->asOneBlock($value);
         }
 
         $blocks = [];
@@ -94,7 +100,7 @@ final class ContentBlockCodec
             // is gone from storage for good. Preserving the value is the
             // promise this codec makes, and a partial read does not keep it.
             if ($block === null) {
-                return $this->asOneBlock($trimmed);
+                return $this->asOneBlock($value);
             }
 
             $blocks[] = $block;
@@ -102,7 +108,7 @@ final class ContentBlockCodec
 
         // A value that claimed to be ours and carried no blocks at all: keep
         // the string rather than open an empty page.
-        return $blocks === [] ? $this->asOneBlock($trimmed) : $blocks;
+        return $blocks === [] ? $this->asOneBlock($value) : $blocks;
     }
 
     /**

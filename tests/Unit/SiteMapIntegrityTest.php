@@ -46,6 +46,45 @@ final class SiteMapIntegrityTest extends TestCase
     }
 
     #[Test]
+    public function a_place_hanging_from_nothing_cannot_be_walked_to(): void
+    {
+        // OrphanParent only ever asked "does a parent RECORD exist". A place
+        // with no parent at all satisfied that trivially, its record resolved,
+        // and it was reported reachable — so the console offered a link nobody
+        // could arrive at by navigating down from the site.
+        $places = [
+            Place::site('regmus', 'Museum'),
+            Place::page('regmus:page:7', 'Floating', null, 'regmus:page'),
+        ];
+
+        self::assertSame(
+            ['regmus' => 'reachable', 'regmus:page:7' => 'unreachable'],
+            $this->verdicts($places, records: ['regmus:page:7']),
+        );
+    }
+
+    #[Test]
+    public function two_places_naming_each_other_cannot_be_walked_to_either(): void
+    {
+        // A cycle satisfies the parent-exists check on both sides, and the
+        // walk down from the root simply never arrives.
+        $places = [
+            Place::site('regmus', 'Museum'),
+            Place::page('regmus:page:a', 'A', 'regmus:page:b', 'regmus:page'),
+            Place::page('regmus:page:b', 'B', 'regmus:page:a', 'regmus:page'),
+        ];
+
+        self::assertSame(
+            [
+                'regmus' => 'reachable',
+                'regmus:page:a' => 'unreachable',
+                'regmus:page:b' => 'unreachable',
+            ],
+            $this->verdicts($places, records: ['regmus:page:a', 'regmus:page:b']),
+        );
+    }
+
+    #[Test]
     public function aPlaceWhoseRecordIsGoneIsNamed(): void
     {
         // THE MUSEUM'S SYMPTOM. The map still offers the page; the row behind

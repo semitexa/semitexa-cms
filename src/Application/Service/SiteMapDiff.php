@@ -117,6 +117,19 @@ final class SiteMapDiff
                 );
             }
 
+            if (($was['opens'] ?? null) !== ($place['opens'] ?? null)) {
+                $changes[] = new MapChangeRecord(
+                    MapChangeKind::SourceChanged,
+                    $ref,
+                    sprintf(
+                        'now opens something else: %s — %s (was %s)',
+                        $this->title($place, $ref),
+                        self::describe($place['opens'] ?? null),
+                        self::describe($was['opens'] ?? null),
+                    ),
+                );
+            }
+
             if (($was['verdict'] ?? null) !== ($place['verdict'] ?? null)) {
                 $changes[] = new MapChangeRecord(
                     MapChangeKind::VerdictChanged,
@@ -132,6 +145,12 @@ final class SiteMapDiff
         }
 
         return $changes;
+    }
+
+    /** What a place opens — an editor id or a collection source — or a dash. */
+    private static function describe(mixed $opens): string
+    {
+        return is_string($opens) && $opens !== '' ? $opens : '—';
     }
 
     /**

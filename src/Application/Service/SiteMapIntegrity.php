@@ -58,15 +58,74 @@ final class SiteMapIntegrity
             $known[$place->ref] = true;
         }
 
+        $reachable = self::reachableFromRoot($all);
+
         $checks = [];
 
         foreach ($all as $place) {
             $verdict = $this->verdictFor($place, $known, $seen, $editorExists, $recordExists, $sourceExists);
+
+            // A place whose content resolves is still not a place anyone can
+            // GET TO. Checked after the content verdict so a broken editor is
+            // still named as a broken editor — being unreachable as well does
+            // not make that the more useful thing to say.
+            if ($verdict === PlaceVerdict::Reachable && !isset($reachable[$place->ref])) {
+                $verdict = PlaceVerdict::Unreachable;
+            }
+
             $seen[$place->ref] = true;
             $checks[] = PlaceCheck::of($place, $verdict);
         }
 
         return $checks;
+    }
+
+    /**
+     * Every ref the site root can actually be walked to.
+     *
+     * A BREADTH-FIRST walk down from the sites, not a look at one edge. The
+     * check before this asked only whether a parent record exists, which a
+     * place hanging from nothing satisfies trivially, and so does a pair of
+     * places naming each other — both were reported Reachable while no visitor
+     * could ever arrive.
+     *
+     * @param list<Place> $all
+     * @return array<string, true>
+     */
+    private static function reachableFromRoot(array $all): array
+    {
+        $children = [];
+        $roots = [];
+
+        foreach ($all as $place) {
+            if ($place->kind === NodeKind::Site) {
+                $roots[] = $place->ref;
+                continue;
+            }
+
+            $children[(string) $place->parentRef][] = $place->ref;
+        }
+
+        $reachable = [];
+        $queue = $roots;
+
+        while ($queue !== []) {
+            $ref = array_shift($queue);
+            if (isset($reachable[$ref])) {
+                // A cycle, or two parents naming the same child. Either way
+                // this ref is already accounted for and re-walking it would
+                // not terminate.
+                continue;
+            }
+
+            $reachable[$ref] = true;
+
+            foreach ($children[$ref] ?? [] as $child) {
+                $queue[] = $child;
+            }
+        }
+
+        return $reachable;
     }
 
     /**

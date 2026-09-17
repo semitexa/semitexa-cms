@@ -14,6 +14,16 @@ enum MapChangeKind: string
     case Moved = 'moved';
     /** It still exists, and whether the console can open it changed. */
     case VerdictChanged = 'verdict_changed';
+
+    /**
+     * The place still opens, and opens something ELSE.
+     *
+     * A move is visible in the tree; a re-pointed editor or collection source
+     * is not. Both sides stay Reachable, so the verdict does not move either —
+     * which made `--compare` report a clean map while every link under that
+     * place had quietly changed what it leads to.
+     */
+    case SourceChanged = 'source_changed';
     /** Every place of a site is gone, because the site is. */
     case SiteGone = 'site_gone';
 }
