@@ -32,14 +32,34 @@ use Semitexa\Weave\Domain\Model\Relation;
  * what a person has since done to it.
  *
  * Hence two rules. Identity is the record's ref, so renaming a place on the map
- * keeps it the same node. And properties merge rather than replace, so a
- * rebuild after new content appears does not undo a title someone corrected or
- * an order they chose.
+ * keeps it the same node. And a field a person has changed is not written over:
+ * the projector records what IT last contributed under {@see PROJECTED}, and on
+ * the next rebuild it leaves alone anything that no longer matches. The module
+ * keeps owning what a place IS — it exists, its kind, what opens it — while the
+ * person owns how it reads.
+ *
+ * That guard is on the projector rather than on the store on purpose. The store
+ * merges with the incoming value winning, which is correct for everything else
+ * that writes to the graph; and an editor — WeaveNodeSaveHandler today, another
+ * one tomorrow — does not have to know that this node came from a map. Nothing
+ * had to change on the writing side for a rename to start surviving.
+ *
+ * A node projected before this existed carries no {@see PROJECTED} baseline, so
+ * the first rebuild after the upgrade seeds one and behaves exactly as before.
+ * There is nothing to migrate.
  */
 #[AsService]
 final class SiteMapProjector
 {
     public const SOURCE = 'cms:map';
+
+    /**
+     * Where the projector remembers its own last contribution, so it can tell
+     * "the module changed this" from "a person changed this". Written by the
+     * projector on every pass and never by an editor, so the store's ordinary
+     * merge keeps it current without any special case.
+     */
+    public const PROJECTED = 'map_projected';
 
     #[InjectAsReadonly]
     protected GraphStoreInterface $graph;
@@ -112,11 +132,16 @@ final class SiteMapProjector
         $ids = [$siteRef => $site->getId()];
 
         foreach ($places as $place) {
+            // Read once and hand it to both deciders: a rebuild runs
+            // synchronously on every watched content save, so an extra lookup
+            // per field would be two more reads per place on a hot path.
+            $existing = $this->graph->nodeByRef($place->ref);
+
             $node = $this->graph->upsertNodeByRef(
                 $place->kind,
                 $place->ref,
-                $place->title,
-                $place->nodeProperties(),
+                $this->titleToWrite($place, $existing),
+                $this->propertiesToWrite($place, $existing),
                 self::SOURCE,
             );
             $ids[$place->ref] = $node->getId();
@@ -147,6 +172,70 @@ final class SiteMapProjector
         ];
     }
 
+
+    /**
+     * The title to contribute, or an empty string to leave the node's alone.
+     *
+     * `upsertNodeByRef` keeps the existing title when handed '', so declining
+     * to write is how the projector says "this one is not mine any more".
+     */
+    private function titleToWrite(Place $place, ?Node $existing): string
+    {
+        return $this->wasChangedByHand($existing, 'title') ? '' : $place->title;
+    }
+
+    /**
+     * The properties to contribute, minus any the person has since set.
+     *
+     * Only `order` is presentation the module also supplies; the rest describe
+     * what the place IS and stay the module's to refresh. The baseline is
+     * rewritten on every pass so a later module change is still recognised as
+     * the module's, not mistaken for an edit.
+     *
+     * @return array<string, mixed>
+     */
+    private function propertiesToWrite(Place $place, ?Node $existing): array
+    {
+        $properties = $place->nodeProperties();
+
+        if ($this->wasChangedByHand($existing, 'order')) {
+            unset($properties['order']);
+        }
+
+        $properties[self::PROJECTED] = [
+            'title' => $place->title,
+            'order' => $place->order,
+        ];
+
+        return $properties;
+    }
+
+    /**
+     * Has this field moved away from what the projector last wrote?
+     *
+     * Three answers, and the middle one is the one that matters. No node yet:
+     * nothing to protect. A node with no baseline — projected before this guard
+     * existed: treat it as the module's and seed the baseline this pass, which
+     * is the pre-existing behaviour and why nothing needs migrating. Otherwise
+     * compare, and a difference can only have come from somewhere other than
+     * the module, because the module's own last value is what we stored.
+     */
+    private function wasChangedByHand(?Node $node, string $field): bool
+    {
+        if ($node === null) {
+            return false;
+        }
+
+        $properties = $node->getProperties();
+        $projected = $properties[self::PROJECTED] ?? null;
+        if (!is_array($projected) || !array_key_exists($field, $projected)) {
+            return false;
+        }
+
+        $current = $field === 'title' ? $node->getTitle() : ($properties[$field] ?? null);
+
+        return $current !== $projected[$field];
+    }
 
     /**
      * Hang the site where it belongs in the person's world: under the work it
