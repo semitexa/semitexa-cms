@@ -141,6 +141,74 @@ final class SiteMapProjectorTest extends TestCase
     }
 
     #[Test]
+    public function a_rename_survives_the_rebuild_that_follows_any_content_change(): void
+    {
+        // The sequence that silently reverted: a person renames a place, then
+        // anyone saves any watched content and SiteMapRefreshListener
+        // re-projects. Before the guard the provider title won and the rename
+        // was gone, with nothing to show it had ever been made.
+        $projector = $this->projector();
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page')]));
+
+        $node = $this->store->nodeByRef('regmus:page:1');
+        self::assertNotNull($node);
+        $this->store->updateNode($node->getId(), 'Головна');
+
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page')]));
+
+        self::assertSame('Головна', $this->store->nodeByRef('regmus:page:1')?->getTitle());
+    }
+
+    #[Test]
+    public function an_order_someone_chose_survives_the_next_rebuild(): void
+    {
+        $projector = $this->projector();
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page', order: 10)]));
+
+        $node = $this->store->nodeByRef('regmus:page:1');
+        self::assertNotNull($node);
+        $this->store->updateNode($node->getId(), null, ['order' => 3]);
+
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page', order: 10)]));
+
+        self::assertSame(3, $this->store->nodeByRef('regmus:page:1')?->getProperties()['order'] ?? null);
+    }
+
+    #[Test]
+    public function an_untouched_place_still_follows_the_module(): void
+    {
+        // The guard must not freeze the map: a title nobody has touched is the
+        // module's to correct, which is the whole point of re-projecting.
+        $projector = $this->projector();
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page', order: 1)]));
+
+        $projector->project($this->provider([Place::page('regmus:page:1', 'Home — renamed in the CMS', editor: 'regmus:page', order: 7)]));
+
+        $node = $this->store->nodeByRef('regmus:page:1');
+        self::assertSame('Home — renamed in the CMS', $node?->getTitle());
+        self::assertSame(7, $node?->getProperties()['order'] ?? null);
+    }
+
+    #[Test]
+    public function a_node_projected_before_the_guard_existed_is_not_mistaken_for_an_edit(): void
+    {
+        // Upgrade path: an existing node carries no baseline, so the first pass
+        // after the upgrade must behave exactly as it did before and seed one.
+        // Reading this as "someone changed it" would freeze every map in place.
+        $this->store->upsertNodeByRef(NodeKind::Page, 'regmus:page:1', 'Stale Title', ['order' => 0], SiteMapProjector::SOURCE);
+
+        $this->projector()->project($this->provider([Place::page('regmus:page:1', 'Home Page', editor: 'regmus:page', order: 4)]));
+
+        $node = $this->store->nodeByRef('regmus:page:1');
+        self::assertSame('Home Page', $node?->getTitle());
+        self::assertSame(4, $node?->getProperties()['order'] ?? null);
+        self::assertSame(
+            ['title' => 'Home Page', 'order' => 4],
+            $node?->getProperties()[SiteMapProjector::PROJECTED] ?? null,
+        );
+    }
+
+    #[Test]
     public function a_place_that_left_the_map_is_reported_and_not_deleted(): void
     {
         // Silently removing part of someone's map is the one behaviour that
