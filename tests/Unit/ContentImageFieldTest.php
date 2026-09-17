@@ -95,8 +95,15 @@ final class ContentImageFieldTest extends TestCase
         // nobody touched — the difference between "leave the picture" and "take
         // the picture off". The contract says an image field arrives EMPTY when
         // cleared, so the input stays and its value goes blank.
-        $this->assertStringContainsString("coverShow(button.closest('.cover'), '', '')", $js);
+        $this->assertStringContainsString("var cover = button.closest('.cover');", $js);
+        $this->assertStringContainsString("coverShow(cover, '', '');", $js);
         $this->assertStringContainsString('hidden.value = assetId;', $js);
+
+        // And the clear supersedes only THIS cover's uploads. The counter used
+        // to be one number for the page, so clearing one image block threw away
+        // an upload running in another.
+        $this->assertStringContainsString('bumpGeneration(cover);', $js);
+        $this->assertStringContainsString('cover.__coverGeneration', $js);
     }
 
     #[Test]

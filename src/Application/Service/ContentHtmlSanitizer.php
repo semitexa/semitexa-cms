@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Application\Service;
 
+use Semitexa\Cms\Domain\Model\ContentBlock;
 use Semitexa\Cms\Domain\Model\SanitizedContent;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -81,10 +82,16 @@ final class ContentHtmlSanitizer
      * leaves its text behind. A save that quietly emptied an article of its
      * pictures under «Збережено.» is the failure this reports on.
      *
-     * @param array<string, string> $values     submitted, keyed by field name
-     * @param list<string>          $htmlFields names of fields whose kind is HTML
+     * A BLOCKS field is cleaned the same way and block by block: its value is a
+     * page the CMS owns, and the text inside each block is markup an author
+     * wrote, so it faces exactly the allowlist a single rich field faces. A
+     * format the sanitiser did not know about would have been a way around it.
+     *
+     * @param array<string, string> $values      submitted, keyed by field name
+     * @param list<string>          $htmlFields  names of fields whose kind is HTML
+     * @param list<string>          $blockFields names of fields whose kind is BLOCKS
      */
-    public function sanitizeValues(array $values, array $htmlFields): SanitizedContent
+    public function sanitizeValues(array $values, array $htmlFields, array $blockFields = []): SanitizedContent
     {
         $refused = [];
 
@@ -94,7 +101,64 @@ final class ContentHtmlSanitizer
             }
         }
 
+        foreach ($blockFields as $name) {
+            if (array_key_exists($name, $values)) {
+                $values[$name] = $this->cleanBlocks($values[$name], $refused);
+            }
+        }
+
         return new SanitizedContent($values, array_values(array_unique($refused)));
+    }
+
+    /**
+     * Every text block through the same allowlist, the page back in one piece.
+     *
+     * A picture block holds an asset id and no markup, so it passes untouched —
+     * and an id that is not one is a question for the media service, not for an
+     * HTML allowlist.
+     *
+     * @param list<string> $refused accumulated by reference, so a dropped image
+     *        inside a block is reported exactly as one in a rich field is
+     */
+    private function cleanBlocks(string $value, array &$refused): string
+    {
+        // The LIMIT IS THE FIELD'S, not each passage's. Checked here because
+        // what follows takes the value apart: every payload can sit under
+        // MAX_BYTES while the page they make up is several times over it, and
+        // the per-payload check inside clean() would pass all of them. The
+        // stored value is this whole string, so this whole string is what the
+        // limit is about.
+        $this->refuseIfTooLarge($value);
+
+        $codec = new ContentBlockCodec();
+
+        // A marked document this cannot read is returned UNTOUCHED.
+        //
+        // decode() answers an unreadable one with the whole JSON as a single
+        // text block so nothing disappears from the screen. Sanitising that
+        // and encoding it again stored the document's own bytes as the
+        // payload of a fresh v1 text block, and no later decoder could get the
+        // original structure back — the save undoing the very preservation the
+        // decode was for. One unreadable block is a reason to leave the value
+        // alone, not to rewrite it.
+        if ($codec->isUnreadableDocument($value)) {
+            return $value;
+        }
+
+        $clean = [];
+        foreach ($codec->decode($value) as $block) {
+            $clean[] = $block->isText()
+                ? ContentBlock::text($this->clean($block->payload, $refused), $block->layout)
+                : $block;
+        }
+
+        // Checked again on the ENCODED result: a legacy value just under the
+        // limit becomes one block plus a JSON envelope, and the value that
+        // actually gets stored is the one the limit is about.
+        $encoded = $clean === [] ? '' : $codec->encode($clean);
+        $this->refuseIfTooLarge($encoded);
+
+        return $encoded;
     }
 
     /**
@@ -111,21 +175,33 @@ final class ContentHtmlSanitizer
     }
 
     /**
+     * The one size gate, shared by a rich document and a whole blocks field.
+     *
+     * @throws \InvalidArgumentException when the value is over {@see self::MAX_BYTES}
+     */
+    private function refuseIfTooLarge(string $value): void
+    {
+        if (strlen($value) <= self::MAX_BYTES) {
+            return;
+        }
+
+        // Refused whole rather than stored in part: half an article saved
+        // under a success message is worse than a save that did not happen.
+        throw new \InvalidArgumentException(sprintf(
+            'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
+            (int) ceil(strlen($value) / 1024),
+            (int) (self::MAX_BYTES / 1024),
+        ));
+    }
+
+    /**
      * @param list<string> $refused image addresses this pass would not keep, appended to
      *
      * @throws \InvalidArgumentException when the document is over {@see self::MAX_BYTES}
      */
     private function clean(string $html, array &$refused): string
     {
-        if (strlen($html) > self::MAX_BYTES) {
-            // Refused whole rather than stored in part: half an article saved
-            // under a success message is worse than a save that did not happen.
-            throw new \InvalidArgumentException(sprintf(
-                'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
-                (int) ceil(strlen($html) / 1024),
-                (int) (self::MAX_BYTES / 1024),
-            ));
-        }
+        $this->refuseIfTooLarge($html);
 
         // Read BEFORE sanitising. The allowlist permits only http and https as
         // media schemes, so Symfony strips the `src` of a `data:` image outright

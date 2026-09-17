@@ -96,10 +96,24 @@
   // Each selection starts its own request, and they do not finish in order.
   // Without a generation the second choice can be overwritten by the first
   // arriving late — and a clear can be undone by a response for the image the
-  // author just removed. The counter is per cover; a response whose generation
-  // is no longer current is dropped.
-  var coverGeneration = 0;
+  // author just removed. A response whose generation is no longer current is
+  // dropped.
+  //
+  // The counter lives ON THE COVER, and that is not tidiness. It used to be one
+  // number for the page, which was right while a page had one cover; a page of
+  // blocks has a picker per image block, so starting an upload in the second
+  // block bumped the shared number and threw away the first block's successful
+  // response. That block then just stayed empty, with no error and no clue.
+  //
+  // `coverPending` stays shared on purpose: it guards the SUBMIT, and the
+  // question there is whether ANY upload is still in flight.
   var coverPending = 0;
+
+  function bumpGeneration(cover) {
+    if (!cover) { return 0; }
+    cover.__coverGeneration = (cover.__coverGeneration || 0) + 1;
+    return cover.__coverGeneration;
+  }
 
   function csrfToken() {
     var input = form.querySelector('input[name="_csrf"]');
@@ -155,7 +169,7 @@
     data.append('file', file);
     data.append('_csrf', csrfToken());
 
-    var generation = ++coverGeneration;
+    var generation = bumpGeneration(cover);
     coverPending += 1;
     setState('saving');
 
@@ -163,7 +177,7 @@
       .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
       .then(function (result) {
         // Superseded by a later choice, or by the author clearing the field.
-        if (generation !== coverGeneration) { return; }
+        if (generation !== cover.__coverGeneration) { return; }
         if (!result.ok || !result.body || !result.body.assetId) {
           // The server says which collection refused it and why — wrong format,
           // too large, over quota — and the author is standing there waiting.
@@ -173,7 +187,7 @@
         coverShow(cover, result.body.assetId, result.body.url);
       })
       .catch(function () {
-        if (generation !== coverGeneration) { return; }
+        if (generation !== cover.__coverGeneration) { return; }
         coverFail(cover, 'Не вдалося зберегти зображення.');
       })
       .then(function () {
@@ -186,10 +200,12 @@
     var button = event.target.closest ? event.target.closest('.cover__clear') : null;
     if (!button) { return; }
     event.preventDefault();
-    // Supersedes anything in flight, so a late response cannot put back the
-    // image the author just removed.
-    coverGeneration += 1;
-    coverShow(button.closest('.cover'), '', '');
+    // Supersedes anything in flight FOR THIS COVER, so a late response cannot
+    // put back the image the author just removed — and cannot cancel an upload
+    // running in a different block either.
+    var cover = button.closest('.cover');
+    bumpGeneration(cover);
+    coverShow(cover, '', '');
   });
 
   // Saving mid-upload would post the PREVIOUS id — the author would watch the

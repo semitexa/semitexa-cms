@@ -22,6 +22,7 @@ use Semitexa\Core\Csrf\CsrfToken;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Session\SessionInterface;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
+use Semitexa\Cms\Application\Service\ContentBlockCodec;
 
 /**
  * Writes an edit back to the module that owns the record.
@@ -107,7 +108,18 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 $clean = $this->sanitizer->sanitizeValues(
                     $payload->submittedValues(),
                     self::htmlFieldNames($before),
+                    self::blockFieldNames($before),
                 );
+                // RE-CHECKED against what will actually be STORED. The gate
+                // above reads what was submitted; the allowlist then runs, and
+                // it can take the last visible thing out of a field — a
+                // pasted-in image the rules refuse, say. Validating only the
+                // input let a required field reach the record empty, under
+                // «Збережено.»
+                $error = self::missingRequired($before, $clean->values);
+            }
+
+            if ($error === null && isset($clean)) {
                 $editor->save($ref, $clean->values);
                 $contentSaved = true;
                 // What the allowlist would not take. Said here rather than
@@ -377,6 +389,20 @@ final class ContentSaveHandler implements TypedHandlerInterface
      */
     private static function hasContent(string $value, string $kind): bool
     {
+        // A page of BLOCKS is a document, not a string. Judged by length it is
+        // always "filled in" — the envelope alone is hundreds of characters —
+        // so a required body made only of empty passages saved with nothing
+        // visible in it. Decoded, each block answers for itself.
+        if ($kind === ContentField::BLOCKS) {
+            foreach ((new ContentBlockCodec())->decode($value) as $block) {
+                if (!$block->isEmpty()) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         if ($kind !== ContentField::HTML) {
             return trim($value) !== '';
         }
@@ -400,9 +426,27 @@ final class ContentSaveHandler implements TypedHandlerInterface
      */
     private static function htmlFieldNames(ContentDraft $draft): array
     {
+        return self::fieldNamesOfKind($draft, ContentField::HTML);
+    }
+
+    /**
+     * The BLOCKS fields, so the sanitiser can clean the markup inside each
+     * block. A page format the allowlist did not know about would have been a
+     * way around it.
+     *
+     * @return list<string>
+     */
+    private static function blockFieldNames(ContentDraft $draft): array
+    {
+        return self::fieldNamesOfKind($draft, ContentField::BLOCKS);
+    }
+
+    /** @return list<string> */
+    private static function fieldNamesOfKind(ContentDraft $draft, string $kind): array
+    {
         $names = [];
         foreach ($draft->fields as $field) {
-            if ($field->kind === ContentField::HTML) {
+            if ($field->kind === $kind) {
                 $names[] = $field->name;
             }
         }

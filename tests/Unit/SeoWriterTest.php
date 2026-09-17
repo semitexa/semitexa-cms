@@ -6,7 +6,9 @@ namespace Semitexa\Cms\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Cms\Application\Service\ContentBlockCodec;
 use Semitexa\Cms\Application\Service\SeoWriter;
+use Semitexa\Cms\Domain\Model\ContentBlock;
 use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Cms\Domain\Model\ContentSeo;
@@ -158,6 +160,57 @@ final class SeoWriterTest extends TestCase
 
         self::assertStringContainsString('open Tuesday to Sunday', $this->lastSystemPrompt);
         self::assertStringNotContainsString('<p>', $this->lastSystemPrompt);
+    }
+
+    #[Test]
+    public function a_page_of_blocks_is_shown_to_the_model_as_words_and_not_as_its_storage(): void
+    {
+        // A BLOCKS field's value is a serialised document. Handed over as it
+        // stands, the model reads the format marker, the schema keys, the
+        // layout names and an asset id — and the page's actual words get cut
+        // off by the character limit. It should read what a visitor reads.
+        $codec = new ContentBlockCodec();
+        $draft = new ContentDraft(
+            ref: 'page:about',
+            title: 'About',
+            fields: [
+                ContentField::blocks('body', 'Body', $codec->encode([
+                    ContentBlock::text('<p>A regional museum in <b>Lviv</b>.</p>'),
+                    ContentBlock::image('asset-9f3c', alt: 'The museum courtyard in spring'),
+                    ContentBlock::text('<p>Open Tuesday to Sunday.</p>'),
+                ])),
+            ],
+            publicUrl: 'https://example.org/about',
+        );
+
+        $this->writer('{"description":"d"}')->write(new ContentSeo(ref: 'page:about'), $draft, 'h');
+
+        self::assertStringContainsString('A regional museum in Lviv.', $this->lastSystemPrompt);
+        self::assertStringContainsString('Open Tuesday to Sunday.', $this->lastSystemPrompt);
+        self::assertStringContainsString('The museum courtyard in spring', $this->lastSystemPrompt, 'alt text is what a model can use about a picture');
+
+        self::assertStringNotContainsString('semitexa.cms.blocks/v1', $this->lastSystemPrompt);
+        self::assertStringNotContainsString('asset-9f3c', $this->lastSystemPrompt);
+        self::assertStringNotContainsString('"layout"', $this->lastSystemPrompt);
+        self::assertStringNotContainsString('<p>', $this->lastSystemPrompt);
+    }
+
+    #[Test]
+    public function paragraphs_do_not_run_into_each_other_on_the_way_to_the_model(): void
+    {
+        // strip_tags() joins what was on either side of the tag it removes, so
+        // two paragraphs arrived as one word with no space in it.
+        $draft = new ContentDraft(
+            ref: 'page:about',
+            title: 'About',
+            fields: [ContentField::html('body', 'Body', '<p>First</p><p>Second</p><ul><li>Third</li></ul>')],
+            publicUrl: 'https://example.org/about',
+        );
+
+        $this->writer('{"description":"d"}')->write(new ContentSeo(ref: 'page:about'), $draft, 'h');
+
+        self::assertStringContainsString('First Second Third', $this->lastSystemPrompt);
+        self::assertStringNotContainsString('FirstSecond', $this->lastSystemPrompt);
     }
 
     private function draft(): ContentDraft

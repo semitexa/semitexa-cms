@@ -171,7 +171,15 @@ final class SeoWriter
                 continue;
             }
             if ($field->kind === ContentField::HTML) {
-                $value = trim((string) preg_replace('/\s+/u', ' ', strip_tags($value)));
+                $value = $this->readable($value);
+            }
+            // A blocks field's VALUE is a serialised document. Handed over as
+            // it stands, the model reads `{"format":"semitexa.cms.blocks/v1"…`,
+            // schema keys, layout names and asset ids — and the page's actual
+            // words get cut off by the limit further down. What it should read
+            // is what a visitor reads.
+            if ($field->kind === ContentField::BLOCKS) {
+                $value = $this->readableBlocks($value);
             }
             if ($value === '') {
                 continue;
@@ -180,6 +188,40 @@ final class SeoWriter
         }
 
         return mb_substr(implode("\n", $parts), 0, self::BODY_LIMIT);
+    }
+
+    /**
+     * Markup out, one line of words in — with the boundaries kept.
+     *
+     * strip_tags() removes a tag and joins what was on either side of it, so
+     * `<p>First</p><p>Second</p>` reached the model as `FirstSecond`. Block
+     * elements and line breaks become a space first; the run-collapse below
+     * tidies up after.
+     */
+    private function readable(string $html): string
+    {
+        $spaced = preg_replace('~</?(?:p|div|br|li|ul|ol|h[1-6]|blockquote|figure|figcaption|tr|td|th)\b[^>]*>~iu', ' ', $html);
+
+        return trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) $spaced)));
+    }
+
+    /**
+     * A blocks document as its reader meets it: the passages in order, and a
+     * picture's description, which is the only thing about a picture a model
+     * can use. The layout and the asset ids say nothing about the page.
+     */
+    private function readableBlocks(string $value): string
+    {
+        $parts = [];
+
+        foreach ((new ContentBlockCodec())->decode($value) as $block) {
+            $text = $block->isText() ? $this->readable($block->payload) : trim($block->alt);
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        }
+
+        return implode(' ', $parts);
     }
 
     private function renderer(): PromptRenderer
