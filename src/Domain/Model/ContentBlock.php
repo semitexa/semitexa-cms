@@ -70,7 +70,12 @@ final readonly class ContentBlock
         // field then passed its check and saved a page with nothing visible
         // on it. Both spellings are normalised: the entity as stored, and the
         // character the browser sends back.
-        $text = str_replace(["\u{00A0}", '&nbsp;', '&#160;', '&#xA0;'], ' ', strip_tags($this->payload));
+        // DECODED, not matched against a list of spellings: `&#xa0;` is as
+        // valid as `&#xA0;`, and a hand-written list is a list that keeps
+        // being one entry short. html_entity_decode answers every spelling of
+        // the same character at once.
+        $text = html_entity_decode(strip_tags($this->payload), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = str_replace("\u{00A0}", ' ', $text);
 
         return trim($text) === '' && stripos($this->payload, '<img') === false;
     }

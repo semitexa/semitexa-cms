@@ -169,8 +169,13 @@ final class SiteMapIntegrityTest extends TestCase
             Place::page('regmus:page:7', 'Video (copy)', 'regmus', 'regmus:page'),
         ];
 
-        // The second one loses: by ref it is unreachable, whatever it is called.
-        self::assertSame('duplicate_ref', $this->verdicts($places, records: ['regmus:page:7'])['regmus:page:7']);
+        // The WHOLE result, keyed by ref: the helper collapses places that
+        // share a ref, so asserting one entry accepts a check that dropped the
+        // first page entirely and returned only the duplicate.
+        self::assertSame(
+            ['regmus' => 'reachable', 'regmus:page:7' => 'duplicate_ref'],
+            $this->verdicts($places, records: ['regmus:page:7']),
+        );
     }
 
     #[Test]

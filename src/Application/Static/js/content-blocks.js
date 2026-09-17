@@ -64,8 +64,23 @@
   }
 
   function collect(list) {
-    var field = document.getElementById(list.getAttribute('data-blocks'));
+    // Scoped to the owning field, not to the document. Unique ids make a
+    // document-wide lookup work today; the rule is that a component reads its
+    // own subtree, so that it keeps working when the ids stop being unique.
+    var owner = list.closest('.blocks-field');
+    var name = list.getAttribute('data-blocks');
+    var field = owner ? owner.querySelector('#' + cssEscape(name)) : null;
+    if (!field) field = document.getElementById(name);
     if (!field) return;
+
+    // An UNREADABLE document the server chose to preserve is left alone.
+    //
+    // When the codec cannot read a block it hands back the whole document as
+    // one text block, so the author still sees something and nothing is lost.
+    // Submitting re-serialised that text block as a fresh v1 document whose
+    // payload is the original's own bytes — so saving a TITLE was enough to
+    // destroy a page this side never understood. Untouched means untouched.
+    if (field.dataset.blocksOpaque === '1') return;
 
     var blocks = blocksIn(list).map(readBlock).filter(function (block) {
       // An empty passage is a gap nobody meant, and an image block with no
@@ -80,6 +95,13 @@
     });
 
     field.value = blocks.length === 0 ? '' : JSON.stringify({ format: FORMAT, blocks: blocks });
+  }
+
+  /** CSS.escape where the browser has it; the two characters that can break out otherwise. */
+  function cssEscape(value) {
+    var text = String(value);
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(text);
+    return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   // From the server-rendered <template> for that kind, NOT from an existing

@@ -14,6 +14,7 @@ use Semitexa\Cms\Domain\Model\ContentDraft;
 use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Core\ModuleRegistry;
 use Semitexa\Ssr\Application\Service\Asset\ModuleAssetRegistry;
+use Semitexa\Ssr\Application\Service\Asset\ModuleAssetResolver;
 
 /**
  * A page of blocks, as the author meets it.
@@ -25,9 +26,29 @@ use Semitexa\Ssr\Application\Service\Asset\ModuleAssetRegistry;
  */
 final class ContentEditorBlocksFieldTest extends TestCase
 {
+    private mixed $resolverSnapshot = null;
+
     protected function setUp(): void
     {
+        // A FRESH resolver is installed before anything is mutated, and the
+        // one that was there is put back afterwards.
+        //
+        // setModuleRegistry() writes THROUGH to the resolver object, so
+        // keeping a reference to it and restoring that reference would restore
+        // a pointer to state this class had already changed. Leaving the
+        // replacement installed is how a later test fails only when this one
+        // happens to run first.
+        $property = new \ReflectionProperty(ModuleAssetRegistry::class, 'resolver');
+        $this->resolverSnapshot = $property->getValue();
+        $property->setValue(null, new ModuleAssetResolver());
+
         ModuleAssetRegistry::setModuleRegistry(new ModuleRegistry());
+    }
+
+    protected function tearDown(): void
+    {
+        (new \ReflectionProperty(ModuleAssetRegistry::class, 'resolver'))
+            ->setValue(null, $this->resolverSnapshot);
     }
 
     /**
@@ -238,6 +259,8 @@ final class ContentEditorBlocksFieldTest extends TestCase
 
         $html = (new ContentEditorPage())->render($draft, 'csrf-token');
 
+        // The page must have rendered before its lack of Trix means anything.
+        self::assertStringContainsString('name="title"', $html, 'the editor rendered its fields');
         self::assertStringNotContainsString('trix.umd.min.js', $html);
     }
 

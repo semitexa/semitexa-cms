@@ -132,6 +132,19 @@ final class ContentHtmlSanitizer
 
         $codec = new ContentBlockCodec();
 
+        // A marked document this cannot read is returned UNTOUCHED.
+        //
+        // decode() answers an unreadable one with the whole JSON as a single
+        // text block so nothing disappears from the screen. Sanitising that
+        // and encoding it again stored the document's own bytes as the
+        // payload of a fresh v1 text block, and no later decoder could get the
+        // original structure back — the save undoing the very preservation the
+        // decode was for. One unreadable block is a reason to leave the value
+        // alone, not to rewrite it.
+        if ($codec->isUnreadableDocument($value)) {
+            return $value;
+        }
+
         $clean = [];
         foreach ($codec->decode($value) as $block) {
             $clean[] = $block->isText()

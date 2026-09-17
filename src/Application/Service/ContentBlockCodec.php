@@ -157,8 +157,46 @@ final class ContentBlockCodec
             return null;
         }
 
-        return ($raw['kind'] ?? ContentBlock::TEXT) === ContentBlock::IMAGE
+        $kind = $raw['kind'] ?? ContentBlock::TEXT;
+
+        // An UNKNOWN kind is unreadable too, not text. A block this version
+        // has never heard of — `"kind":"video"` written by a newer CMS —
+        // silently became a text block, and the next save wrote that back, so
+        // opening a page in an older console was enough to destroy a kind it
+        // simply did not implement yet. Refusing to read it keeps the whole
+        // document intact instead.
+        if ($kind !== ContentBlock::TEXT && $kind !== ContentBlock::IMAGE) {
+            return null;
+        }
+
+        return $kind === ContentBlock::IMAGE
             ? ContentBlock::image($payload, $alt, BlockLayout::of($align, $size))
             : ContentBlock::text($payload, BlockLayout::of($align, $size));
+    }
+
+    /**
+     * True when this value CLAIMS to be a blocks document and cannot be read.
+     *
+     * {@see self::decode()} answers such a value with the whole document as a
+     * single text block, which is what keeps it on screen and out of harm's
+     * way. But a caller that then re-encodes what it was handed writes that
+     * JSON back as the payload of a v1 text block, and the original structure
+     * is gone for good — the preservation this format promises undone by the
+     * save that follows.
+     *
+     * So the save path asks this first, and leaves such a value exactly as it
+     * found it.
+     */
+    public function isUnreadableDocument(string $value): bool
+    {
+        if (!str_contains($value, self::MARKER)) {
+            return false;
+        }
+
+        $blocks = $this->decode($value);
+
+        return count($blocks) === 1
+            && $blocks[0]->isText()
+            && $blocks[0]->payload === trim($value);
     }
 }

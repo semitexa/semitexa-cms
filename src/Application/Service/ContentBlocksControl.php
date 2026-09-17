@@ -39,8 +39,19 @@ final class ContentBlocksControl
         $escapedName = $this->escape($name);
         $id = 'blocks-' . $position . '-' . preg_replace('/[^A-Za-z0-9_-]/', '-', $escapedName);
 
+        $codec = new ContentBlockCodec();
+
+        // A document this version cannot read is marked OPAQUE for the client.
+        //
+        // decode() hands such a value back as one text block so the author
+        // still sees it, and the editor would otherwise re-serialise that on
+        // the next submit — writing the document's own bytes into a fresh v1
+        // text block and losing whatever a newer console had written. The flag
+        // tells the client to leave the field exactly as it was given.
+        $opaque = $codec->isUnreadableDocument($value) ? ' data-blocks-opaque="1"' : '';
+
         $blocks = '';
-        foreach ((new ContentBlockCodec())->decode($value) as $index => $block) {
+        foreach ($codec->decode($value) as $index => $block) {
             $blocks .= $this->blockEditor($id, $index, $block, $picker);
         }
 
@@ -52,7 +63,7 @@ final class ContentBlocksControl
         // scopes the <template> lookup, which had the same reach.
         return '<div class="blocks-field">'
             . '<input id="' . $id . '" type="hidden" name="' . $escapedName . '"'
-            . ' value="' . $this->escape($value) . '"' . $required . '>'
+            . ' value="' . $this->escape($value) . '"' . $required . $opaque . '>'
             . '<div class="blocks" data-blocks="' . $id . '">' . $blocks . '</div>'
             . $this->templates($id, $picker)
             . '<div class="blocks__add">'

@@ -65,6 +65,9 @@ final class BlocksGoThroughTheAllowlistTest extends TestCase
             ContentBlock::text('<div><iframe src="//evil"></iframe>Третій</div>'),
         ]);
 
+        // The words FIRST. Stripping the whole payload also removes the
+        // attribute, so the negative alone accepts sanitising a block away.
+        self::assertStringContainsString('Другий', $out[1]->payload, 'the text survives the attribute being stripped');
         self::assertStringNotContainsString('onclick', $out[1]->payload);
         self::assertStringNotContainsString('<iframe', $out[2]->payload);
         self::assertStringContainsString('Третій', $out[2]->payload);

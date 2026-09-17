@@ -122,6 +122,13 @@ final class ContentBlockRendererTest extends TestCase
             ContentBlock::text('<div>2</div>'),
         ]);
 
+        // Each block asserted PRESENT before the order is compared. A missing
+        // block gives strpos() false, PHP compares that as zero, and the
+        // ordering assertions keep passing while the renderer drops it.
+        foreach (['<div>1</div>', 'media/a', '<div>2</div>'] as $needle) {
+            self::assertNotFalse(strpos($html, $needle), $needle . ' is rendered at all');
+        }
+
         self::assertLessThan(strpos($html, 'media/a'), strpos($html, '<div>1</div>'));
         self::assertLessThan(strpos($html, '<div>2</div>'), strpos($html, 'media/a'));
     }

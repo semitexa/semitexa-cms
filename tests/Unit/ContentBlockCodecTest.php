@@ -137,13 +137,25 @@ final class ContentBlockCodecTest extends TestCase
     }
 
     #[Test]
-    public function anUnknownKindIsReadAsText(): void
+    public function anUnknownKindKeepsTheWholeDocumentRatherThanBecomingText(): void
     {
-        // Forward compatibility in the direction that matters: a page written
-        // by a newer version opens here with its words intact.
+        // Forward compatibility, decided the way the rest of this format
+        // decides it. A block written by a newer version — `kind: video` —
+        // used to open as a TEXT block holding its payload, which reads
+        // nicely and is a trap: the next save wrote that back and the kind was
+        // gone, so merely opening a page in an older console destroyed it.
+        //
+        // The trade is deliberate and worth stating. The whole document now
+        // comes back as one opaque block, so an author on the older console
+        // sees JSON rather than the words. That is ugly; losing the author's
+        // video block is worse, and it is silent.
         $value = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"video","payload":"<div>Hi</div>"}]}';
 
-        self::assertTrue($this->codec->decode($value)[0]->isText());
+        $blocks = $this->codec->decode($value);
+
+        self::assertCount(1, $blocks);
+        self::assertSame($value, $blocks[0]->payload, 'the document is preserved whole, not reinterpreted');
+        self::assertTrue($this->codec->isUnreadableDocument($value), 'and the save path is told to leave it alone');
     }
 
     #[Test]
