@@ -63,7 +63,16 @@ final readonly class ContentBlock
         // stripos: HTML tag names are case-insensitive, and an image-only
         // block written with <IMG> read as empty — the renderer then dropped
         // the whole block, picture and all.
-        return trim(strip_tags($this->payload)) === '' && stripos($this->payload, '<img') === false;
+        //
+        // A non-breaking space is whitespace to a reader and not to trim(),
+        // so `<div>&nbsp;</div>` — which is what an editor leaves behind when
+        // the author clears a paragraph — counted as content. A REQUIRED
+        // field then passed its check and saved a page with nothing visible
+        // on it. Both spellings are normalised: the entity as stored, and the
+        // character the browser sends back.
+        $text = str_replace(["\u{00A0}", '&nbsp;', '&#160;', '&#xA0;'], ' ', strip_tags($this->payload));
+
+        return trim($text) === '' && stripos($this->payload, '<img') === false;
     }
 
     public function withLayout(BlockLayout $layout): self

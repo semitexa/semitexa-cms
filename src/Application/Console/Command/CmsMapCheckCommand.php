@@ -157,6 +157,43 @@ final class CmsMapCheckCommand extends BaseCommand
      *
      * @param array<string, mixed> $sites
      */
+    /**
+     * Write it whole or not at all.
+     *
+     * The snapshot is a BASELINE: the next run compares against it, and a
+     * truncated one is worse than none — it reports differences that are
+     * artefacts of the write. Writing straight to the path truncates the old
+     * baseline before the new bytes land, so an interrupted or short write
+     * destroys the answer AND replaces it with a lie. A short count is a
+     * failure here, not the success `!== false` read it as.
+     */
+    private function writeAtomically(string $path, string $contents): bool
+    {
+        $temporary = @tempnam(dirname($path), '.cms-map-');
+        if ($temporary === false) {
+            return false;
+        }
+
+        $written = @file_put_contents($temporary, $contents);
+        if ($written !== strlen($contents)) {
+            @unlink($temporary);
+
+            return false;
+        }
+
+        // Same directory, so this is a rename and not a copy: the old baseline
+        // is replaced in one step, and a reader sees one file or the other.
+        if (!@rename($temporary, $path)) {
+            @unlink($temporary);
+
+            return false;
+        }
+
+        @chmod($path, 0o644);
+
+        return true;
+    }
+
     private function writeSnapshot(string $path, array $sites, OutputInterface $output, bool $json): bool
     {
         // SUBSTITUTE rather than a silent ''. json_encode() returns false on
@@ -167,9 +204,7 @@ final class CmsMapCheckCommand extends BaseCommand
             JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
         );
 
-        $written = $encoded === false ? false : @file_put_contents($path, $encoded);
-
-        if ($written === false) {
+        if ($encoded === false || !$this->writeAtomically($path, $encoded)) {
             $this->fail($output, $json, sprintf('Could not write the snapshot to %s', $path));
 
             return false;

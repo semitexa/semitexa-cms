@@ -6,8 +6,10 @@ namespace Semitexa\Cms\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Semitexa\Cms\Application\Handler\PayloadHandler\ContentSaveHandler;
 use Semitexa\Cms\Application\Service\ContentBlockCodec;
 use Semitexa\Cms\Domain\Model\BlockLayout;
+use Semitexa\Cms\Domain\Model\ContentField;
 use Semitexa\Cms\Domain\Model\ContentBlock;
 
 /**
@@ -170,5 +172,47 @@ final class ContentBlockCodecTest extends TestCase
         self::assertTrue(ContentBlock::text('<div>   </div>')->isEmpty());
         self::assertFalse(ContentBlock::text('<div><img src="/os/app/cms/media/a"></div>')->isEmpty());
         self::assertFalse(ContentBlock::text('<div>слово</div>')->isEmpty());
+    }
+
+    #[Test]
+    public function aBlockHoldingOnlyANonBreakingSpaceIsEmpty(): void
+    {
+        // What a rich-text editor leaves behind when the author clears a
+        // paragraph. It is whitespace to a reader and not to trim(), so a
+        // REQUIRED blocks field passed its check and saved a page with
+        // nothing visible on it — reported as a successful save.
+        self::assertTrue(ContentBlock::text('<div>&nbsp;</div>')->isEmpty());
+        self::assertTrue(ContentBlock::text("<p>\u{00A0}</p>")->isEmpty());
+        self::assertTrue(ContentBlock::text('<p>&#160;</p>')->isEmpty());
+        self::assertFalse(ContentBlock::text('<p>&nbsp;слово</p>')->isEmpty(), 'a word beside it is still a word');
+    }
+
+    #[Test]
+    public function aRequiredBlocksFieldOfNonBreakingSpacesIsStillMissing(): void
+    {
+        // The required check asks each decoded block whether it is empty, so
+        // this is the same rule one level up — and it is the level where the
+        // consequence is: a required body made only of `&nbsp;` passed and
+        // saved a page with nothing visible on it, reported as a success.
+        $document = (new ContentBlockCodec())->encode([
+            ContentBlock::text('<div>&nbsp;</div>'),
+            ContentBlock::text('<p>&nbsp;</p>'),
+        ]);
+
+        $hasContent = new \ReflectionMethod(ContentSaveHandler::class, 'hasContent');
+
+        self::assertFalse($hasContent->invoke(null, $document, ContentField::BLOCKS));
+    }
+
+    #[Test]
+    public function aBlockWhoseKindIsNotAStringIsNotReadableAsABlock(): void
+    {
+        // Present but not a string failed the image comparison and became a
+        // TEXT block — and the next save wrote that back, replacing whatever
+        // the document said with `"kind":"text"`. A document this cannot read
+        // comes back whole, as the paragraph it is, so nothing is lost.
+        $document = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":["image"],"payload":"<p>x</p>"}]}';
+
+        self::assertSame($document, $this->codec->decode($document)[0]->payload);
     }
 }

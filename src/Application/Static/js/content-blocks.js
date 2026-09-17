@@ -72,7 +72,11 @@
       // picture is a figure with nothing in it. Dropping them on collect keeps
       // the stored page clean without telling the author off mid-edit.
       if (block.kind === 'image') return block.payload !== '';
-      return block.payload.replace(/<[^>]*>/g, '').trim() !== '' || block.payload.indexOf('<img') !== -1;
+      // Case-insensitively, for the same reason the PHP side reads it that
+      // way: an existing page can hold `<IMG>` until its author touches the
+      // editor, and a lowercase-only test dropped that block — picture and
+      // all — the first time anything else on the page was saved.
+      return block.payload.replace(/<[^>]*>/g, '').trim() !== '' || /<img\b/i.test(block.payload);
     });
 
     field.value = blocks.length === 0 ? '' : JSON.stringify({ format: FORMAT, blocks: blocks });

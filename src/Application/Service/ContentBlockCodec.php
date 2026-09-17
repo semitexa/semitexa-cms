@@ -148,6 +148,15 @@ final class ContentBlockCodec
 
         $alt = (string) ($raw['alt'] ?? '');
 
+        // Same rule as `alt` above, for the field that decides what the block
+        // IS. A present `kind` that is not a string failed the comparison
+        // below and became a text block — and the next save wrote that back,
+        // replacing whatever the document actually said with `"kind":"text"`.
+        // A kind this cannot read means the document cannot be read.
+        if (array_key_exists('kind', $raw) && !is_string($raw['kind'])) {
+            return null;
+        }
+
         return ($raw['kind'] ?? ContentBlock::TEXT) === ContentBlock::IMAGE
             ? ContentBlock::image($payload, $alt, BlockLayout::of($align, $size))
             : ContentBlock::text($payload, BlockLayout::of($align, $size));
