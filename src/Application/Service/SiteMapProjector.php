@@ -132,11 +132,16 @@ final class SiteMapProjector
         $ids = [$siteRef => $site->getId()];
 
         foreach ($places as $place) {
+            // Read once and hand it to both deciders: a rebuild runs
+            // synchronously on every watched content save, so an extra lookup
+            // per field would be two more reads per place on a hot path.
+            $existing = $this->graph->nodeByRef($place->ref);
+
             $node = $this->graph->upsertNodeByRef(
                 $place->kind,
                 $place->ref,
-                $this->titleToWrite($place),
-                $this->propertiesToWrite($place),
+                $this->titleToWrite($place, $existing),
+                $this->propertiesToWrite($place, $existing),
                 self::SOURCE,
             );
             $ids[$place->ref] = $node->getId();
@@ -174,9 +179,9 @@ final class SiteMapProjector
      * `upsertNodeByRef` keeps the existing title when handed '', so declining
      * to write is how the projector says "this one is not mine any more".
      */
-    private function titleToWrite(Place $place): string
+    private function titleToWrite(Place $place, ?Node $existing): string
     {
-        return $this->wasChangedByHand($place, 'title') ? '' : $place->title;
+        return $this->wasChangedByHand($existing, 'title') ? '' : $place->title;
     }
 
     /**
@@ -189,11 +194,11 @@ final class SiteMapProjector
      *
      * @return array<string, mixed>
      */
-    private function propertiesToWrite(Place $place): array
+    private function propertiesToWrite(Place $place, ?Node $existing): array
     {
         $properties = $place->nodeProperties();
 
-        if ($this->wasChangedByHand($place, 'order')) {
+        if ($this->wasChangedByHand($existing, 'order')) {
             unset($properties['order']);
         }
 
@@ -215,9 +220,8 @@ final class SiteMapProjector
      * compare, and a difference can only have come from somewhere other than
      * the module, because the module's own last value is what we stored.
      */
-    private function wasChangedByHand(Place $place, string $field): bool
+    private function wasChangedByHand(?Node $node, string $field): bool
     {
-        $node = $this->graph->nodeByRef($place->ref);
         if ($node === null) {
             return false;
         }
