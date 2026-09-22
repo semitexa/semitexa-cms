@@ -8,7 +8,6 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Service\SiteMapIntegrity;
 use Semitexa\Cms\Domain\Model\Place;
-use Semitexa\Cms\Domain\Model\PlaceVerdict;
 
 /**
  * Every way the console can offer a place and then fail to open it.

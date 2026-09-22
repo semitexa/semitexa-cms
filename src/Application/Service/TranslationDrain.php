@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Application\Service;
 
-use Semitexa\Cms\Domain\Contract\ContentTranslatorInterface;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 
