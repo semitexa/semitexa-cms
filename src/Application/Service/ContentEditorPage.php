@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Cms\Domain\Model\ContentDraft;
-use Semitexa\Cms\Domain\Model\BlockLayout;
-use Semitexa\Cms\Domain\Model\ContentBlock;
 use Semitexa\Cms\Domain\Model\ContentField;
-use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Cms\Domain\Model\ContentSeo;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;

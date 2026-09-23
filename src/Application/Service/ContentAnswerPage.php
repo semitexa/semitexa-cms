@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Semitexa\Cms\Application\Service;
 
-use Semitexa\Cms\Domain\Model\ContentRow;
 use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Core\Attribute\AsService;
 

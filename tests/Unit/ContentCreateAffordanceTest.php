@@ -7,7 +7,6 @@ namespace Semitexa\Cms\Tests\Unit;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Cms\Application\Service\ContentAnswerPage;
-use Semitexa\Cms\Application\Service\ContentEditorPage;
 use Semitexa\Cms\Domain\Model\ContentRow;
 use Semitexa\Cms\Domain\Model\ContentRows;
 
