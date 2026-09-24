@@ -30,6 +30,9 @@ final class SiteMapDiff
     public function between(array $before, array $after): array
     {
         $changes = [];
+        // The head belongs to the tenant, and every map of it records the same
+        // one: compared once, or one lost analytics id reads as N changes.
+        $headCompared = false;
 
         foreach ($after as $siteRef => $site) {
             $siteRef = (string) $siteRef;
@@ -44,8 +47,9 @@ final class SiteMapDiff
                     $this->byRef((array) ((is_array($previous) ? $previous : [])['places'] ?? [])),
                     $this->byRef((array) ((is_array($site) ? $site : [])['places'] ?? [])),
                 ),
-                ...$this->forHead(is_array($previous) ? $previous : [], is_array($site) ? $site : []),
+                ...($headCompared ? [] : $this->forHead(is_array($previous) ? $previous : [], is_array($site) ? $site : [])),
             ];
+            $headCompared = $headCompared || (is_array($previous) && array_key_exists('head', $previous));
         }
 
         // A site present in the snapshot and absent now is the loudest finding
@@ -150,7 +154,6 @@ final class SiteMapDiff
         return $changes;
     }
 
-    /** What a place opens — an editor id or a collection source — or a dash. */
     /**
      * What happened to the site's own head values.
      *
@@ -190,6 +193,7 @@ final class SiteMapDiff
         return $changes;
     }
 
+    /** What a place opens — an editor id or a collection source — or a dash. */
     private static function describe(mixed $opens): string
     {
         return is_string($opens) && $opens !== '' ? $opens : '—';

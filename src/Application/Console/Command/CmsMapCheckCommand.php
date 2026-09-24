@@ -88,7 +88,8 @@ final class CmsMapCheckCommand extends BaseCommand
 
         $sites = [];
         $problemCount = 0;
-        // Per tenant, not per map: every map of this site shares one head.
+        // Per tenant, not per map: every map of this site shares one head, so
+        // its problems are reported (and counted) once, under the first map.
         $head = $this->siteHead->current();
         $headProblems = array_map(
             static fn (string $why): string => 'site head value not rendered: ' . $why,
@@ -105,12 +106,14 @@ final class CmsMapCheckCommand extends BaseCommand
 
             $problems = $integrity->problems($checks);
             $problemCount += count($problems) + count($headProblems);
+            $siteHeadProblems = $headProblems;
+            $headProblems = [];
 
             $sites[$provider->siteRef()] = [
                 'title' => $provider->siteTitle(),
                 'places' => array_map(static fn (PlaceCheck $c): array => $c->toArray(), $checks),
                 'head' => $head->values,
-                'problems' => [...array_map(static fn (PlaceCheck $c): string => $c->explain(), $problems), ...$headProblems],
+                'problems' => [...array_map(static fn (PlaceCheck $c): string => $c->explain(), $problems), ...$siteHeadProblems],
             ];
         }
 

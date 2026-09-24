@@ -220,4 +220,18 @@ final class SiteMapDiffTest extends TestCase
         $before = json_decode((string) json_encode($this->siteWithHead(['plausible_domain' => 'example.com'])), true);
         self::assertSame([], $this->diff->between($before, $this->siteWithHead(['plausible_domain' => 'example.com']))['regmus']);
     }
+
+    /** Every map of a tenant records the same head: one lost value is one change, not one per map. */
+    #[Test]
+    public function a_head_shared_by_several_maps_is_compared_once(): void
+    {
+        $site = fn (array $head): array => ['title' => 'Site', 'places' => [], 'head' => $head];
+        $before = ['main' => $site(['ga4_measurement_id' => 'G-ABC123XYZ']), 'shop' => $site(['ga4_measurement_id' => 'G-ABC123XYZ'])];
+        $after = ['main' => $site([]), 'shop' => $site([])];
+
+        $all = array_merge(...array_values($this->diff->between($before, $after)));
+
+        self::assertCount(1, $all);
+        self::assertSame(MapChangeKind::HeadValueGone, $all[0]->kind);
+    }
 }
