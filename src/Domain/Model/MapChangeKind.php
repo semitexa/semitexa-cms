@@ -26,4 +26,13 @@ enum MapChangeKind: string
     case SourceChanged = 'source_changed';
     /** Every place of a site is gone, because the site is. */
     case SiteGone = 'site_gone';
+    /**
+     * A value the site put in its own <head> (analytics id, verification
+     * token) was there before and is not now. No page is missing, nothing
+     * fails to open — analytics just stops, and the owner finds out from
+     * empty reports a week later. That is how this was found.
+     */
+    case HeadValueGone = 'head_value_gone';
+    /** The same head value is set, to something else. */
+    case HeadValueChanged = 'head_value_changed';
 }

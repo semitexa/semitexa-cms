@@ -39,10 +39,13 @@ final class SiteMapDiff
             // and PHP 8.4 raised a TypeError before any report was written.
             $previous = $before[$siteRef] ?? [];
 
-            $changes[$siteRef] = $this->forSite(
-                $this->byRef((array) ((is_array($previous) ? $previous : [])['places'] ?? [])),
-                $this->byRef((array) ((is_array($site) ? $site : [])['places'] ?? [])),
-            );
+            $changes[$siteRef] = [
+                ...$this->forSite(
+                    $this->byRef((array) ((is_array($previous) ? $previous : [])['places'] ?? [])),
+                    $this->byRef((array) ((is_array($site) ? $site : [])['places'] ?? [])),
+                ),
+                ...$this->forHead(is_array($previous) ? $previous : [], is_array($site) ? $site : []),
+            ];
         }
 
         // A site present in the snapshot and absent now is the loudest finding
@@ -148,6 +151,45 @@ final class SiteMapDiff
     }
 
     /** What a place opens — an editor id or a collection source — or a dash. */
+    /**
+     * What happened to the site's own head values.
+     *
+     * Only when the earlier snapshot recorded them: one taken before head
+     * values were part of the snapshot says nothing about them, and reading
+     * its silence as "none were set" would be a guess.
+     *
+     * @param array<array-key, mixed> $before
+     * @param array<array-key, mixed> $after
+     * @return list<MapChangeRecord>
+     */
+    private function forHead(array $before, array $after): array
+    {
+        if (!array_key_exists('head', $before) || !is_array($before['head'])) {
+            return [];
+        }
+        $now = is_array($after['head'] ?? null) ? $after['head'] : [];
+
+        $changes = [];
+        foreach ($before['head'] as $key => $value) {
+            $key = (string) $key;
+            if (!array_key_exists($key, $now)) {
+                $changes[] = new MapChangeRecord(
+                    MapChangeKind::HeadValueGone,
+                    $key,
+                    sprintf('the site head value %s (%s) did not come across', $key, (string) $value),
+                );
+            } elseif ((string) $now[$key] !== (string) $value) {
+                $changes[] = new MapChangeRecord(
+                    MapChangeKind::HeadValueChanged,
+                    $key,
+                    sprintf('the site head value %s changed: %s → %s', $key, (string) $value, (string) $now[$key]),
+                );
+            }
+        }
+
+        return $changes;
+    }
+
     private static function describe(mixed $opens): string
     {
         return is_string($opens) && $opens !== '' ? $opens : '—';

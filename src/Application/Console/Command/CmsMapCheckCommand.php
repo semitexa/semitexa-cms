@@ -13,6 +13,7 @@ use Semitexa\Cms\Domain\Model\PlaceCheck;
 use Semitexa\Core\Attribute\AsCommand;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Console\BaseCommand;
+use Semitexa\Ssr\Application\Service\Seo\SiteHead\SiteHeadReader;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -51,6 +52,14 @@ final class CmsMapCheckCommand extends BaseCommand
     #[InjectAsReadonly]
     protected ContentSurfaceRegistry $surfaces;
 
+    /**
+     * The site's own head values ride along in the snapshot: an analytics id
+     * that did not survive a move is invisible in the map and in every page,
+     * and was noticed only when the reports stopped.
+     */
+    #[InjectAsReadonly]
+    protected SiteHeadReader $siteHead;
+
     protected function configure(): void
     {
         $this->setName('cms:map:check')
@@ -79,6 +88,12 @@ final class CmsMapCheckCommand extends BaseCommand
 
         $sites = [];
         $problemCount = 0;
+        // Per tenant, not per map: every map of this site shares one head.
+        $head = $this->siteHead->current();
+        $headProblems = array_map(
+            static fn (string $why): string => 'site head value not rendered: ' . $why,
+            array_values($head->rejected),
+        );
 
         foreach ($providers as $provider) {
             $checks = $integrity->check(
@@ -89,12 +104,13 @@ final class CmsMapCheckCommand extends BaseCommand
             );
 
             $problems = $integrity->problems($checks);
-            $problemCount += count($problems);
+            $problemCount += count($problems) + count($headProblems);
 
             $sites[$provider->siteRef()] = [
                 'title' => $provider->siteTitle(),
                 'places' => array_map(static fn (PlaceCheck $c): array => $c->toArray(), $checks),
-                'problems' => array_map(static fn (PlaceCheck $c): string => $c->explain(), $problems),
+                'head' => $head->values,
+                'problems' => [...array_map(static fn (PlaceCheck $c): string => $c->explain(), $problems), ...$headProblems],
             ];
         }
 
@@ -218,7 +234,7 @@ final class CmsMapCheckCommand extends BaseCommand
     }
 
     /**
-     * @param array<string, array{title: string, places: list<array<string, mixed>>, problems: list<string>}> $sites
+     * @param array<string, array{title: string, places: list<array<string, mixed>>, head: array<string, string>, problems: list<string>}> $sites
      * @param array<string, list<MapChangeRecord>> $changes
      */
     private function emitText(OutputInterface $output, array $sites, array $changes, int $problemCount): int
