@@ -49,7 +49,9 @@ final class SiteMapDiff
                 ),
                 ...($headCompared ? [] : $this->forHead(is_array($previous) ? $previous : [], is_array($site) ? $site : [])),
             ];
-            $headCompared = $headCompared || (is_array($previous) && array_key_exists('head', $previous));
+            // Only a head that forHead() actually compared: a map recorded with
+            // "head": null must not stop a later map's real head from being read.
+            $headCompared = $headCompared || (is_array($previous) && is_array($previous['head'] ?? null));
         }
 
         // A site present in the snapshot and absent now is the loudest finding

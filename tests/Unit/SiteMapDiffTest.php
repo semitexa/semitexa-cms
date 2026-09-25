@@ -234,4 +234,19 @@ final class SiteMapDiffTest extends TestCase
         self::assertCount(1, $all);
         self::assertSame(MapChangeKind::HeadValueGone, $all[0]->kind);
     }
+
+    /** A first map recorded with a null head must not hide a later map's real one. */
+    #[Test]
+    public function a_null_head_on_the_first_map_does_not_hide_the_next(): void
+    {
+        $before = [
+            'main' => ['title' => 'Site', 'places' => [], 'head' => null],
+            'shop' => ['title' => 'Site', 'places' => [], 'head' => ['ga4_measurement_id' => 'G-ABC123XYZ']],
+        ];
+        $after = ['main' => ['title' => 'Site', 'places' => [], 'head' => []], 'shop' => ['title' => 'Site', 'places' => [], 'head' => []]];
+
+        $all = array_merge(...array_values($this->diff->between($before, $after)));
+
+        self::assertSame([MapChangeKind::HeadValueGone], array_map(static fn ($c) => $c->kind, $all));
+    }
 }
