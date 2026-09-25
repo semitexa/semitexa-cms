@@ -41,6 +41,11 @@
         "semitexa-module": {
             "name": "cms",
             "description": "Site map: places, their editors, and the projection into the graph"
+        },
+        "semitexa": {
+            "floors": {
+                "semitexa/ssr": "next"
+            }
         }
     },
     "keywords": [
