@@ -1,6 +1,6 @@
 {
     "name": "semitexa/cms",
-    "description": "Semitexa CMS — a site as a map of places: pages that open an editor, collections that open a grid",
+    "description": "Semitexa CMS \u2014 a site as a map of places: pages that open an editor, collections that open a grid",
     "type": "semitexa-module",
     "license": "MIT",
     "authors": [
@@ -19,7 +19,7 @@
         "semitexa/scheduler": "*",
         "semitexa/os": "*",
         "semitexa/weave": "*",
-        "semitexa/ssr": "*",
+        "semitexa/ssr": ">=2026.09.27.0404 || dev-master",
         "semitexa/media": "*",
         "symfony/html-sanitizer": "^7.0"
     },
@@ -44,7 +44,7 @@
         },
         "semitexa": {
             "floors": {
-                "semitexa/ssr": "next"
+                "semitexa/ssr": "2026.09.27.0404"
             }
         }
     },
