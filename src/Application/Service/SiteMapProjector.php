@@ -47,6 +47,13 @@ use Semitexa\Weave\Domain\Model\Relation;
  * A node projected before this existed carries no {@see PROJECTED} baseline, so
  * the first rebuild after the upgrade seeds one and behaves exactly as before.
  * There is nothing to migrate.
+ *
+ * Existence is guarded the same way, one level up. A removed node has no value
+ * left to compare, so the site node carries the baseline instead: {@see PLACES}
+ * lists every ref the map claimed on the last pass. A ref on that list whose
+ * node is gone was removed by a person, and is not created again — before this,
+ * the next content save brought it back under a new id. The remove action still
+ * does not have to know the node came from a map.
  */
 #[AsService]
 final class SiteMapProjector
@@ -60,6 +67,13 @@ final class SiteMapProjector
      * merge keeps it current without any special case.
      */
     public const PROJECTED = 'map_projected';
+
+    /**
+     * On the site node: every ref the map claimed on the last pass, including
+     * those a person has since removed — keeping them listed is what keeps the
+     * removal remembered on every pass after the one that noticed it.
+     */
+    public const PLACES = 'map_places';
 
     #[InjectAsReadonly]
     protected GraphStoreInterface $graph;
@@ -83,7 +97,7 @@ final class SiteMapProjector
     /**
      * Project every discovered map.
      *
-     * @return list<array{site: string, places: int, edges: int, stale: list<string>}>
+     * @return list<array{site: string, places: int, edges: int, stale: list<string>, removed: list<string>}>
      */
     public function projectAll(bool $dryRun = false): array
     {
@@ -97,14 +111,36 @@ final class SiteMapProjector
     }
 
     /**
-     * @return array{site: string, places: int, edges: int, stale: list<string>}
+     * `removed` lists places the map still claims but a person took off it;
+     * they are left off, and counted in neither `places` nor `edges`.
+     *
+     * @return array{site: string, places: int, edges: int, stale: list<string>, removed: list<string>}
      */
     public function project(SiteMapProviderInterface $provider, bool $dryRun = false): array
     {
         $siteRef = trim($provider->siteRef());
-        $places = [];
+        $claimed = [];
         foreach ($provider->places() as $place) {
-            $places[$place->ref] = $place;
+            $claimed[$place->ref] = $place;
+        }
+
+        // Read before the site is written below, which replaces the baseline.
+        $wasClaimed = $this->previouslyClaimed($siteRef);
+
+        $places = [];
+        $existing = [];
+        $removed = [];
+        foreach ($claimed as $ref => $place) {
+            // Read once and hand it to the deciders below: a rebuild runs
+            // synchronously on every watched content save, so an extra lookup
+            // per field would be two more reads per place on a hot path.
+            $node = $this->graph->nodeByRef($ref);
+            if ($node === null && isset($wasClaimed[$ref])) {
+                $removed[] = $ref;
+                continue;
+            }
+            $places[$ref] = $place;
+            $existing[$ref] = $node;
         }
 
         if ($dryRun) {
@@ -115,7 +151,8 @@ final class SiteMapProjector
                 // site itself. Counting only explicit parents would report zero
                 // for a flat map and read as "nothing would be linked".
                 'edges' => count($places),
-                'stale' => $this->staleRefs($siteRef, array_keys($places)),
+                'stale' => $this->staleRefs($siteRef, array_keys($claimed)),
+                'removed' => $removed,
             ];
         }
 
@@ -123,7 +160,7 @@ final class SiteMapProjector
             NodeKind::Site,
             $siteRef,
             $provider->siteTitle(),
-            ['origin' => 'site', 'opens' => 'map'],
+            ['origin' => 'site', 'opens' => 'map', self::PLACES => array_keys($claimed)],
             self::SOURCE,
         );
 
@@ -132,16 +169,11 @@ final class SiteMapProjector
         $ids = [$siteRef => $site->getId()];
 
         foreach ($places as $place) {
-            // Read once and hand it to both deciders: a rebuild runs
-            // synchronously on every watched content save, so an extra lookup
-            // per field would be two more reads per place on a hot path.
-            $existing = $this->graph->nodeByRef($place->ref);
-
             $node = $this->graph->upsertNodeByRef(
                 $place->kind,
                 $place->ref,
-                $this->titleToWrite($place, $existing),
-                $this->propertiesToWrite($place, $existing),
+                $this->titleToWrite($place, $existing[$place->ref]),
+                $this->propertiesToWrite($place, $existing[$place->ref]),
                 self::SOURCE,
             );
             $ids[$place->ref] = $node->getId();
@@ -152,8 +184,9 @@ final class SiteMapProjector
             $parentRef = $place->parentRef ?? $siteRef;
             $parentId = $ids[$parentRef] ?? null;
 
-            // A place naming a parent that no map produced would otherwise hang
-            // off nothing and vanish from every view that walks from the root.
+            // A place naming a parent that no map produced — or one a person
+            // removed — would otherwise hang off nothing and vanish from every
+            // view that walks from the root.
             if ($parentId === null) {
                 $parentId = $ids[$siteRef];
             }
@@ -168,8 +201,28 @@ final class SiteMapProjector
             'site' => $siteRef,
             'places' => count($places),
             'edges' => $edges,
-            'stale' => $this->staleRefs($siteRef, array_keys($places)),
+            'stale' => $this->staleRefs($siteRef, array_keys($claimed)),
+            'removed' => $removed,
         ];
+    }
+
+    /**
+     * The refs the map claimed on its last pass, as a set.
+     *
+     * Empty when there was no last pass, and when the site was projected before
+     * this baseline existed — then every missing place is simply created, which
+     * is the pre-existing behaviour, and this pass seeds the list.
+     *
+     * @return array<string, true>
+     */
+    private function previouslyClaimed(string $siteRef): array
+    {
+        $refs = $this->graph->nodeByRef($siteRef)?->getProperties()[self::PLACES] ?? null;
+        if (!is_array($refs)) {
+            return [];
+        }
+
+        return array_fill_keys(array_filter($refs, 'is_string'), true);
     }
 
 

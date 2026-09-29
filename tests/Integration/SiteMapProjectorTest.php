@@ -98,7 +98,7 @@ final class SiteMapProjectorTest extends TestCase
             Place::collection('regmus:events', 'Події', source: 'regmus:pages?type=event'),
         ]));
 
-        self::assertSame(['site' => 'regmus', 'places' => 2, 'edges' => 2, 'stale' => []], $report);
+        self::assertSame(['site' => 'regmus', 'places' => 2, 'edges' => 2, 'stale' => [], 'removed' => []], $report);
         self::assertCount(1, $this->store->nodesByKind(NodeKind::Site));
         self::assertCount(1, $this->store->nodesByKind(NodeKind::Page));
         self::assertCount(1, $this->store->nodesByKind(NodeKind::Collection));
@@ -225,6 +225,114 @@ final class SiteMapProjectorTest extends TestCase
 
         self::assertSame(['regmus:page:9'], $report['stale']);
         self::assertNotNull($this->store->nodeByRef('regmus:page:9'));
+    }
+
+    #[Test]
+    public function a_place_a_person_removed_is_not_brought_back_by_the_next_rebuild(): void
+    {
+        // The sequence that undid itself: a person removes a place, anyone saves
+        // watched content, SiteMapRefreshListener re-projects — and the place
+        // came back as a different node.
+        $projector = $this->projector();
+        $map = $this->provider([
+            Place::page('regmus:page:3', 'Контакти', editor: 'regmus:page'),
+            Place::page('regmus:page:9', 'Архів', editor: 'regmus:page'),
+        ]);
+        $projector->project($map);
+
+        $node = $this->store->nodeByRef('regmus:page:9');
+        self::assertNotNull($node);
+        $this->store->removeNode($node->getId());
+
+        $report = $projector->project($map);
+
+        self::assertNull($this->store->nodeByRef('regmus:page:9'));
+        self::assertSame(['regmus:page:9'], $report['removed']);
+        self::assertSame(1, $report['places']);
+        self::assertSame([], $report['stale']);
+    }
+
+    #[Test]
+    public function a_removal_is_still_remembered_on_every_rebuild_after_it(): void
+    {
+        // The pass that notices the removal rewrites the baseline; if it dropped
+        // the ref from it, the pass after would see a brand-new place.
+        $projector = $this->projector();
+        $map = $this->provider([Place::page('regmus:page:9', 'Архів', editor: 'regmus:page')]);
+        $projector->project($map);
+
+        $this->store->removeNode((string) $this->store->nodeByRef('regmus:page:9')?->getId());
+        $projector->project($map);
+        $projector->project($map);
+
+        self::assertNull($this->store->nodeByRef('regmus:page:9'));
+    }
+
+    #[Test]
+    public function a_place_new_to_the_map_is_still_created_after_a_removal(): void
+    {
+        // The guard must recognise a removal, not freeze the map's membership.
+        $projector = $this->projector();
+        $projector->project($this->provider([Place::page('regmus:page:9', 'Архів', editor: 'regmus:page')]));
+        $this->store->removeNode((string) $this->store->nodeByRef('regmus:page:9')?->getId());
+
+        $report = $projector->project($this->provider([
+            Place::page('regmus:page:9', 'Архів', editor: 'regmus:page'),
+            Place::page('regmus:page:12', 'Новини', editor: 'regmus:page'),
+        ]));
+
+        self::assertNotNull($this->store->nodeByRef('regmus:page:12'));
+        self::assertSame(['regmus:page:9'], $report['removed']);
+    }
+
+    #[Test]
+    public function a_site_projected_before_the_baseline_existed_recreates_what_is_missing(): void
+    {
+        // Upgrade path: no list on the site node means no way to tell a removal
+        // from a place never projected, so this pass behaves as before and seeds.
+        $this->store->upsertNodeByRef(NodeKind::Site, 'regmus', 'Museum', ['origin' => 'site'], SiteMapProjector::SOURCE);
+
+        $report = $this->projector()->project($this->provider([Place::page('regmus:page:9', 'Архів', editor: 'regmus:page')]));
+
+        self::assertNotNull($this->store->nodeByRef('regmus:page:9'));
+        self::assertSame([], $report['removed']);
+        self::assertSame(['regmus:page:9'], $this->store->nodeByRef('regmus')?->getProperties()[SiteMapProjector::PLACES] ?? null);
+    }
+
+    #[Test]
+    public function the_children_of_a_removed_place_hang_off_the_site(): void
+    {
+        $projector = $this->projector();
+        $map = $this->provider([
+            Place::collection('regmus:events', 'Події', source: 'regmus:pages?type=event'),
+            Place::page('regmus:page:40', 'Виставка', editor: 'regmus:page', parentRef: 'regmus:events'),
+        ]);
+        $projector->project($map);
+        $this->store->removeNode((string) $this->store->nodeByRef('regmus:events')?->getId());
+
+        $report = $projector->project($map);
+
+        $site = $this->store->nodeByRef('regmus');
+        $child = $this->store->nodeByRef('regmus:page:40');
+        self::assertNotNull($site);
+        self::assertNotNull($child);
+        self::assertSame(1, $report['edges']);
+        $neighbours = array_map(static fn ($n): string => $n->getId(), $this->store->neighborhood($child->getId())['neighbors'] ?? []);
+        self::assertContains($site->getId(), $neighbours);
+    }
+
+    #[Test]
+    public function a_dry_run_reports_a_removal_without_writing(): void
+    {
+        $projector = $this->projector();
+        $map = $this->provider([Place::page('regmus:page:9', 'Архів', editor: 'regmus:page')]);
+        $projector->project($map);
+        $this->store->removeNode((string) $this->store->nodeByRef('regmus:page:9')?->getId());
+
+        $report = $projector->project($map, dryRun: true);
+
+        self::assertSame(['regmus:page:9'], $report['removed']);
+        self::assertSame(0, $report['places']);
     }
 
     #[Test]
