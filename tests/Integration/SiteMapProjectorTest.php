@@ -13,6 +13,7 @@ use Semitexa\Orm\Domain\Model\ConnectionConfig;
 use Semitexa\Orm\OrmManager;
 use Semitexa\Weave\Application\Service\GraphStore;
 use Semitexa\Weave\Domain\Enum\NodeKind;
+use Semitexa\Weave\Domain\Model\Node;
 
 /**
  * The projection runs against a real graph store: what matters is that a
@@ -317,8 +318,44 @@ final class SiteMapProjectorTest extends TestCase
         self::assertNotNull($site);
         self::assertNotNull($child);
         self::assertSame(1, $report['edges']);
-        $neighbours = array_map(static fn ($n): string => $n->getId(), $this->store->neighborhood($child->getId())['neighbors'] ?? []);
-        self::assertContains($site->getId(), $neighbours);
+        $neighbours = array_map(static fn ($n): string => $n->getId(), $this->store->neighborhood($child->getId())['neighbors']);
+        self::assertSame([$site->getId()], $neighbours);
+    }
+
+    #[Test]
+    public function a_pass_that_fails_halfway_does_not_mistake_what_it_never_created_for_a_removal(): void
+    {
+        // The store gives out on the second place of the very first pass.
+        $failing = new class () extends GraphStore {
+            public int $placesLeft = 1;
+
+            public function upsertNodeByRef(NodeKind $kind, string $ref, string $title, array $properties = [], string $source = ''): Node
+            {
+                if ($kind === NodeKind::Page && $this->placesLeft-- <= 0) {
+                    throw new \RuntimeException('store went away');
+                }
+
+                return parent::upsertNodeByRef($kind, $ref, $title, $properties, $source);
+            }
+        };
+        (new \ReflectionProperty(GraphStore::class, 'orm'))->setValue($failing, $this->orm);
+        $broken = new SiteMapProjector();
+        (new \ReflectionProperty(SiteMapProjector::class, 'graph'))->setValue($broken, $failing);
+
+        $map = $this->provider([
+            Place::page('regmus:page:3', 'Контакти', editor: 'regmus:page'),
+            Place::page('regmus:page:9', 'Архів', editor: 'regmus:page'),
+        ]);
+        try {
+            $broken->project($map);
+            self::fail('the store was meant to fail');
+        } catch (\RuntimeException) {
+        }
+
+        $report = $this->projector()->project($map);
+
+        self::assertSame([], $report['removed']);
+        self::assertNotNull($this->store->nodeByRef('regmus:page:9'));
     }
 
     #[Test]

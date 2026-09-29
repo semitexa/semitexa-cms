@@ -160,7 +160,7 @@ final class SiteMapProjector
             NodeKind::Site,
             $siteRef,
             $provider->siteTitle(),
-            ['origin' => 'site', 'opens' => 'map', self::PLACES => array_keys($claimed)],
+            ['origin' => 'site', 'opens' => 'map'],
             self::SOURCE,
         );
 
@@ -196,6 +196,11 @@ final class SiteMapProjector
             $this->graph->addEdge($parentId, $ids[$place->ref], Relation::PART_OF, 100, self::SOURCE);
             $edges++;
         }
+
+        // Last, once every place exists: a pass that failed halfway must leave
+        // the previous baseline, or a ref it never got to create would read as
+        // removed by a person and never be created at all.
+        $this->graph->updateNode($site->getId(), null, [self::PLACES => array_keys($claimed)]);
 
         return [
             'site' => $siteRef,
