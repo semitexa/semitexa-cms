@@ -79,6 +79,16 @@ final class CmsMapBuildCommand extends BaseCommand
                     implode(', ', $report['stale']),
                 ));
             }
+
+            if ($report['removed'] !== []) {
+                // Removed by a person; the map still claims them, but a rebuild
+                // must not bring them back — see SiteMapProjector::PLACES.
+                $output->writeln(sprintf(
+                    '  <comment>%d place(s) removed from the map by hand, not re-created: %s</comment>',
+                    count($report['removed']),
+                    implode(', ', $report['removed']),
+                ));
+            }
         }
 
         if ($skipped !== []) {
