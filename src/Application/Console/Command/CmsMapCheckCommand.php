@@ -290,7 +290,7 @@ final class CmsMapCheckCommand extends BaseCommand
                 ),
                 $changes,
             ),
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         return self::verdict($problemCount, $changes);
     }
@@ -352,7 +352,7 @@ final class CmsMapCheckCommand extends BaseCommand
                 'note' => $skipped === []
                     ? 'no site map declared here'
                     : 'no map for this tenant; maps exist for: ' . implode(', ', $skipped),
-            ], JSON_PRETTY_PRINT));
+            ], JSON_PRETTY_PRINT), OutputInterface::OUTPUT_RAW);
 
             return Command::SUCCESS;
         }
