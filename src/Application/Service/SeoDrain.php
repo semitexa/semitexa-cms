@@ -59,9 +59,11 @@ final class SeoDrain
             $seo = $this->store->get($row->getRef());
             $hash = $this->fingerprint($draft);
 
-            if (!$seo->isEmpty() && !$seo->isStale($hash)) {
+            if ($seo->describes($hash)) {
                 // Described from exactly this text already — the window closed
-                // on an edit that undid itself. Settle for nothing.
+                // on an edit that undid itself. Settle for nothing. A record a
+                // person filled and nobody generated has no hash: it used to
+                // land here, settle as still due, and come back every tick.
                 $this->store->settle($seo, $row->getEditorId(), $hash);
                 $skipped++;
                 continue;

@@ -48,8 +48,10 @@ final class SeoWriter
     /**
      * Bring the generated half of a page's metadata up to date.
      *
-     * Returns the record unchanged when there is nothing to do — every field
-     * claimed by a person, or a model that would not answer. A failed call is
+     * Returns the record's values unchanged when there is nothing to do —
+     * every field claimed by a person, or a page with nothing to describe —
+     * but stamped with $sourceHash: the text was looked at, and a record left
+     * on its old hash was settled as still due, taking a place in every batch. A failed call is
      * NOT an empty result: overwriting good metadata with nothing because a
      * provider blinked is the one outcome worth guarding against.
      *
@@ -59,14 +61,14 @@ final class SeoWriter
     {
         $requested = $seo->openToGeneration();
         if ($requested === []) {
-            return $seo;
+            return $seo->withGenerated([], $sourceHash);
         }
 
         $body = $this->body($draft);
         if (trim($body) === '') {
             // An empty page has nothing to say about itself, and a model asked
             // to describe nothing will invent something.
-            return $seo;
+            return $seo->withGenerated([], $sourceHash);
         }
 
         $prompt = (new SeoWriterPrompt())->withData(

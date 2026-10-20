@@ -67,7 +67,9 @@ final class SeoWriterTest extends TestCase
             self::fail('the model must not be called when there is nothing to generate');
         });
 
-        self::assertSame($seo, $writer->write($seo, $this->draft(), 'hash-1'));
+        $written = $writer->write($seo, $this->draft(), 'hash-1');
+        self::assertSame('ours', $written->description);
+        self::assertSame('hash-1', $written->sourceHash, 'looked at, so settled: an old hash kept the page due forever');
     }
 
     #[Test]
@@ -79,7 +81,9 @@ final class SeoWriterTest extends TestCase
             self::fail('a model asked to describe nothing will invent something');
         });
 
-        self::assertTrue($writer->write(new ContentSeo(ref: 'page:about'), $empty, 'h')->isEmpty());
+        $written = $writer->write(new ContentSeo(ref: 'page:about'), $empty, 'h');
+        self::assertTrue($written->isEmpty());
+        self::assertSame('h', $written->sourceHash);
     }
 
     /**

@@ -92,6 +92,31 @@ final class ContentSeoTest extends TestCase
      * the text. A model guessing at it would be inventing policy.
      */
     #[Test]
+    public function a_released_field_forgets_what_text_the_record_was_settled_against(): void
+    {
+        // Otherwise the save that releases it, with the page text unchanged,
+        // finds the record settled and nothing ever generates the field again.
+        $seo = (new ContentSeo(ref: 'page:about'))
+            ->withAuthored(['description' => 'mine'])
+            ->withGenerated(['title' => 'About'], 'hash-1');
+
+        self::assertTrue($seo->describes('hash-1'));
+        self::assertFalse($seo->withAuthored(['description' => ''])->describes('hash-1'));
+        self::assertTrue($seo->withAuthored(['title' => 'Ours now'])->describes('hash-1'), 'claiming a field owes the generator nothing');
+    }
+
+    #[Test]
+    public function a_record_a_person_filled_and_nobody_generated_describes_no_text(): void
+    {
+        // The drain skipped it as "already described", settled it on a hash it
+        // never had, and so took it back up on every tick.
+        $seo = (new ContentSeo(ref: 'page:about'))->withAuthored(['title' => 'Ours']);
+
+        self::assertFalse($seo->isStale('hash-1'));
+        self::assertFalse($seo->describes('hash-1'));
+    }
+
+    #[Test]
     public function indexing_policy_and_the_social_image_are_never_generated(): void
     {
         $seo = (new ContentSeo(ref: 'page:about'))
