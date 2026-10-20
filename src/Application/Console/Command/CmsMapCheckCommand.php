@@ -102,6 +102,7 @@ final class CmsMapCheckCommand extends BaseCommand
                 fn (string $editorId): bool => $this->surfaces->editor($editorId) !== null,
                 fn (string $editorId, string $ref): bool => $this->surfaces->editor($editorId)?->load($ref) !== null,
                 fn (string $source): bool => $this->surfaces->collection($source) !== null,
+                trim($provider->siteRef()),
             );
 
             $problems = $integrity->problems($checks);

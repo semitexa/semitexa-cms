@@ -121,6 +121,11 @@ final class SiteMapProjector
         $siteRef = trim($provider->siteRef());
         $claimed = [];
         foreach ($provider->places() as $place) {
+            // The site is written below as the root. Written again as a place
+            // it took `opens: editor` over `opens: map` and an edge to itself.
+            if ($place->ref === $siteRef) {
+                continue;
+            }
             $claimed[$place->ref] = $place;
         }
 

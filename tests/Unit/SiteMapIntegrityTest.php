@@ -45,21 +45,38 @@ final class SiteMapIntegrityTest extends TestCase
     }
 
     #[Test]
-    public function a_place_hanging_from_nothing_cannot_be_walked_to(): void
+    public function a_place_with_no_parent_hangs_from_the_site(): void
     {
-        // OrphanParent only ever asked "does a parent RECORD exist". A place
-        // with no parent at all satisfied that trivially, its record resolved,
-        // and it was reported reachable — so the console offered a link nobody
-        // could arrive at by navigating down from the site.
+        // The projector gives it an edge to the site, so the console walks to
+        // it. The check called it unreachable, a problem no map could fix
+        // except by naming the parent the projector already assumed.
         $places = [
             Place::site('regmus', 'Museum'),
-            Place::page('regmus:page:7', 'Floating', null, 'regmus:page'),
+            Place::page('regmus:page:7', 'About', null, 'regmus:page'),
         ];
 
         self::assertSame(
-            ['regmus' => 'reachable', 'regmus:page:7' => 'unreachable'],
+            ['regmus' => 'reachable', 'regmus:page:7' => 'reachable'],
             $this->verdicts($places, records: ['regmus:page:7']),
         );
+    }
+
+    #[Test]
+    public function a_map_that_does_not_yield_its_site_is_still_walked_from_it(): void
+    {
+        // The projector writes the site from siteRef(); yielding it is optional.
+        $checks = $this->integrity->check(
+            [
+                Place::page('regmus:page:1', 'About', 'regmus', 'regmus:page'),
+                Place::page('regmus:page:2', 'Contact', null, 'regmus:page'),
+            ],
+            static fn (string $editor): bool => $editor === 'regmus:page',
+            static fn (string $editor, string $ref): bool => true,
+            static fn (string $source): bool => false,
+            'regmus',
+        );
+
+        self::assertSame([], $this->integrity->problems($checks));
     }
 
     #[Test]
