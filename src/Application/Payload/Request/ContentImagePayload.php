@@ -7,6 +7,7 @@ namespace Semitexa\Cms\Application\Payload\Request;
 use Semitexa\Core\Attribute\AsPublicPayload;
 use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * An image referenced from stored article markup, addressed by asset id.
@@ -54,7 +55,7 @@ final class ContentImagePayload implements ValidatablePayloadInterface
     public function validate(): array
     {
         return trim($this->assetId) === ''
-            ? ['assetId' => ['Не вказано зображення.']]
+            ? ['assetId' => [CmsText::t('image.no_asset', [], 'No image was given.')]]
             : [];
     }
 }

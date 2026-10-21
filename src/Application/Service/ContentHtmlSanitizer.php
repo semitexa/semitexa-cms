@@ -49,7 +49,7 @@ final class ContentHtmlSanitizer
      *
      * HtmlSanitizer defends itself against pathological input by TRUNCATING at
      * `maxInputLength` — 20 000 bytes by default — and saying nothing. An
-     * author writing a long article would have been told «Збережено.» while the
+     * author writing a long article would have been told «Saved.» while the
      * tail of their text was cut off mid-tag, and only found out by reopening
      * it. So the library's silent cut is turned off and a limit of our own is
      * enforced here, where going over is an answer the author can read.
@@ -80,7 +80,7 @@ final class ContentHtmlSanitizer
      * because dropping one of those is the only removal here that loses
      * something an author would miss — everything else the allowlist strips
      * leaves its text behind. A save that quietly emptied an article of its
-     * pictures under «Збережено.» is the failure this reports on.
+     * pictures under «Saved.» is the failure this reports on.
      *
      * A BLOCKS field is cleaned the same way and block by block: its value is a
      * page the CMS owns, and the text inside each block is markup an author
@@ -187,10 +187,10 @@ final class ContentHtmlSanitizer
 
         // Refused whole rather than stored in part: half an article saved
         // under a success message is worse than a save that did not happen.
-        throw new \InvalidArgumentException(sprintf(
-            'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
-            (int) ceil(strlen($value) / 1024),
-            (int) (self::MAX_BYTES / 1024),
+        throw new \InvalidArgumentException(CmsText::t(
+            'save.too_large',
+            ['size' => (int) ceil(strlen($value) / 1024), 'max' => (int) (self::MAX_BYTES / 1024)],
+            'The text is too large: {{size}} KB, and at most {{max}} KB is allowed. Split it into several records.',
         ));
     }
 
@@ -207,7 +207,7 @@ final class ContentHtmlSanitizer
         // media schemes, so Symfony strips the `src` of a `data:` image outright
         // — and what reaches dropForeignImages() is then an <img> with no src,
         // which that method deliberately passes over in silence. A pasted
-        // screenshot therefore vanished under «Збережено.» with nothing said,
+        // screenshot therefore vanished under «Saved.» with nothing said,
         // which is the exact failure this reporting exists to prevent.
         $this->noteRefusedSources($html, $refused);
 

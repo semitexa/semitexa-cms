@@ -176,7 +176,7 @@
   });
 
   // Layout is chosen with a select, so the page is written the moment it
-  // changes: an author who picks «По центру» and closes the window should not
+  // changes: an author who picks «Center» and closes the window should not
   // discover on reopening that only typing was saved.
   document.addEventListener('change', function (event) {
     var list = listOf(event.target);

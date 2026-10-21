@@ -22,6 +22,7 @@ use Semitexa\Cms\Domain\Model\ContentRows;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Weave\Domain\Enum\NodeKind;
 use Semitexa\Weave\Domain\Model\Node;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * Opens a place on the map: a page as its editor, a collection as its list.
@@ -154,12 +155,12 @@ final class ContentEditorHandler implements TypedHandlerInterface
         }
 
         return new ContentRows(
-            title: 'Що з цього відкрити?',
+            title: CmsText::t('choose.which', [], 'Which of these should open?'),
             rows: array_map(
                 static fn(Node $node): ContentRow => new ContentRow(
                     ref: (string) $node->getRef(),
                     title: $node->getTitle(),
-                    meta: [$node->getKind() === NodeKind::Collection ? 'список' : 'сторінка'],
+                    meta: [self::kindLabel($node)],
                 ),
                 $matches,
             ),
@@ -199,7 +200,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
     /**
      * Every place on the map, as the same list a collection opens.
      *
-     * The empty state used to say "можливо, запис видалено" here, which accused
+     * The empty state used to say "the record may have been deleted" here, which accused
      * the author of removing a record they had never named — the editor had
      * simply been opened with nothing to open.
      */
@@ -213,7 +214,7 @@ final class ContentEditorHandler implements TypedHandlerInterface
             $rows[] = new ContentRow(
                 ref: (string) $node->getRef(),
                 title: $node->getTitle(),
-                meta: [$node->getKind() === NodeKind::Collection ? 'список' : 'сторінка'],
+                meta: [self::kindLabel($node)],
             );
         }
 
@@ -222,9 +223,17 @@ final class ContentEditorHandler implements TypedHandlerInterface
         }
 
         return $this->answers->renderRows(
-            new ContentRows('Що відкрити?', $rows, count($rows), 1, count($rows)),
+            new ContentRows(CmsText::t('choose.what', [], 'What should open?'), $rows, count($rows), 1, count($rows)),
             '',
         );
+    }
+
+    /** What a place on the map is, in a word, for the meta line of a row. */
+    private static function kindLabel(Node $node): string
+    {
+        return $node->getKind() === NodeKind::Collection
+            ? CmsText::t('kind.collection', [], 'list')
+            : CmsText::t('kind.page', [], 'page');
     }
 
     private function grid(string $ref, string $source, int $pageNumber): string

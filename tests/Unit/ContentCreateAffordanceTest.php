@@ -98,21 +98,21 @@ final class ContentCreateAffordanceTest extends TestCase
 
         // By name, not by ref: a row's delete control sits next to its title,
         // which is exactly where a misclick lives.
-        $this->assertStringContainsString('Прибрати «Весняна виставка»?', $html);
+        $this->assertStringContainsString('Remove “Весняна виставка”?', $html);
         $this->assertStringContainsString('name="confirm" value="1"', $html);
-        $this->assertStringContainsString('Скасувати', $html);
+        $this->assertStringContainsString('Cancel', $html);
 
         // The CMS never touches the table, so it must not claim the bytes are
         // gone — only that the item stops being on the site.
-        $this->assertStringContainsString('зникне з сайту', $html);
-        $this->assertStringContainsString('може лишити копію', $html);
+        $this->assertStringContainsString('disappear from the site', $html);
+        $this->assertStringContainsString('may keep its own copy', $html);
     }
 
     #[Test]
     public function a_module_that_refuses_says_why_in_its_own_words(): void
     {
         // The module is the only party that knows the reason, and an author told
-        // "не вдалося" learns nothing.
+        // "it failed" learns nothing.
         $html = (new ContentAnswerPage())->renderCreateFailed('demo:articles', 'Квота вичерпана.');
 
         $this->assertStringContainsString('Квота вичерпана.', $html);
@@ -124,7 +124,7 @@ final class ContentCreateAffordanceTest extends TestCase
     {
         $html = (new ContentAnswerPage())->renderCannotCreate('demo:articles');
 
-        $this->assertStringContainsString('не можна створити', $html);
-        $this->assertStringNotContainsString('видалено', $html);
+        $this->assertStringContainsString('cannot be created', $html);
+        $this->assertStringNotContainsString('deleted', $html);
     }
 }

@@ -17,6 +17,7 @@ use Semitexa\Core\Csrf\CsrfToken;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Session\SessionInterface;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * Takes one record off the site.
@@ -59,7 +60,11 @@ final class ContentDeleteHandler implements TypedHandlerInterface
         if ($this->graph->nodeByRef($ref) !== null) {
             return $this->html($resource, $this->answers->renderCannotRemove(
                 $ref,
-                'Це сторінка на карті сайту. Її прибирає модуль, який її туди поставив.',
+                CmsText::t(
+                    'remove.refused.map_page',
+                    [],
+                    'This is a page on the site map. The module that put it there is the one that removes it.',
+                ),
             ));
         }
 
@@ -74,7 +79,11 @@ final class ContentDeleteHandler implements TypedHandlerInterface
         if (!$collection instanceof ContentRemoverInterface) {
             return $this->html($resource, $this->answers->renderCannotRemove(
                 $ref,
-                'Цей список веде модуль, який не дозволяє прибирати записи звідси.',
+                CmsText::t(
+                    'remove.refused.module',
+                    [],
+                    'The module that maintains this list does not allow removing records from here.',
+                ),
             ));
         }
 

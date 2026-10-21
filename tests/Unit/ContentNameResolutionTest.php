@@ -126,8 +126,8 @@ final class ContentNameResolutionTest extends TestCase
         $this->assertSame(['regmus:page:7', 'regmus:events'], array_map(static fn($r) => $r->ref, $rows->rows));
         // Each candidate says what it is, so the choice is informed rather than
         // two titles that happen to look alike.
-        $this->assertSame(['сторінка'], $rows->rows[0]->meta);
-        $this->assertSame(['список'], $rows->rows[1]->meta);
+        $this->assertSame(['page'], $rows->rows[0]->meta);
+        $this->assertSame(['list'], $rows->rows[1]->meta);
     }
 
     #[Test]
@@ -162,7 +162,7 @@ final class ContentNameResolutionTest extends TestCase
 
         $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
 
-        $this->assertStringNotContainsString('видалено', $html);
+        $this->assertStringNotContainsString('deleted', $html);
         $this->assertStringContainsString('/os/app/cms?ref=regmus%3Apage%3A7', $html);
         $this->assertStringContainsString('/os/app/cms?ref=regmus%3Aevents', $html);
     }
@@ -175,7 +175,7 @@ final class ContentNameResolutionTest extends TestCase
 
         $html = (string) (new \ReflectionMethod(ContentEditorHandler::class, 'chooseAPlace'))->invoke($handler);
 
-        $this->assertStringNotContainsString('видалено', $html);
+        $this->assertStringNotContainsString('deleted', $html);
         $this->assertStringContainsString('cms:map:build', $html);
     }
 
@@ -185,16 +185,16 @@ final class ContentNameResolutionTest extends TestCase
         $answers = new ContentAnswerPage();
 
         // A ref resolving to nothing really can be a removed record.
-        $this->assertStringContainsString('видалено', $answers->renderMissing('regmus:page:404'));
+        $this->assertStringContainsString('deleted', $answers->renderMissing('regmus:page:404'));
 
         // A name that matches nothing is usually a name this site never used.
         // Saying the work may have been deleted because someone typed
         // "Contacts" instead of "Kontakty" is the same accusation relocated.
         $notFound = $answers->renderNameNotFound('кулінарія');
-        $this->assertStringNotContainsString('видалено', $notFound);
+        $this->assertStringNotContainsString('deleted', $notFound);
         $this->assertStringContainsString('кулінарія', $notFound);
 
-        $this->assertStringNotContainsString('видалено', $answers->renderNothingChosen());
+        $this->assertStringNotContainsString('deleted', $answers->renderNothingChosen());
     }
 
     #[Test]

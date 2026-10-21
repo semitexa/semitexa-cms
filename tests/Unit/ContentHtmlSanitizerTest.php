@@ -216,7 +216,7 @@ final class ContentHtmlSanitizerTest extends TestCase
 
         $notice = (string) $out->notice();
 
-        self::assertStringContainsString('2 шт.', $notice);
+        self::assertStringContainsString('2 of them', $notice);
         self::assertStringContainsString('https://evil.test/a.png', $notice);
         self::assertStringContainsString('https://other.test/b.png', $notice);
         self::assertStringContainsString('текст', $out->values['body'], 'the words were never the problem');
@@ -348,7 +348,7 @@ final class ContentHtmlSanitizerTest extends TestCase
     public function a_document_over_our_own_limit_is_refused_rather_than_trimmed(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/завелик/u');
+        $this->expectExceptionMessageMatches('/too large/u');
 
         $this->sanitizer->sanitize(str_repeat('a', 200_001));
     }

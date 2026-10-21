@@ -23,6 +23,7 @@ use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Session\SessionInterface;
 use Semitexa\Weave\Domain\Contract\GraphStoreInterface;
 use Semitexa\Cms\Application\Service\ContentBlockCodec;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * Writes an edit back to the module that owns the record.
@@ -115,7 +116,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 // it can take the last visible thing out of a field — a
                 // pasted-in image the rules refuse, say. Validating only the
                 // input let a required field reach the record empty, under
-                // «Збережено.»
+                // «Saved.»
                 $error = self::missingRequired($before, $clean->values);
             }
 
@@ -124,9 +125,9 @@ final class ContentSaveHandler implements TypedHandlerInterface
                 $contentSaved = true;
                 // What the allowlist would not take. Said here rather than
                 // swallowed: an article emptied of its pictures under
-                // «Збережено.» is discovered by reopening it, which is the
+                // «Saved.» is discovered by reopening it, which is the
                 // worst moment and the wrong person to discover it.
-                $warning = $clean->notice();
+                $warning = $clean->notice(CmsText::t(...));
                 $this->saveSeo($ref, $editor->editorId(), $payload->submittedSeo());
                 $this->queueTranslation($ref, $editor->editorId());
                 $saved = $editor->load($ref);
@@ -140,8 +141,12 @@ final class ContentSaveHandler implements TypedHandlerInterface
             [$error, $warning] = self::reportFailure(
                 $contentSaved,
                 $warning,
-                'Не вдалося зберегти. Спробуйте ще раз.',
-                'Текст збережено, але метадані для пошуку — ні. Відкрийте запис і збережіть ще раз.',
+                CmsText::t('save.failed', [], 'Could not save. Try again.'),
+                CmsText::t(
+                    'save.seo_failed',
+                    [],
+                    'The text was saved, but the search metadata was not. Open the record and save it again.',
+                ),
             );
         }
 
@@ -157,7 +162,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         return $this->html($resource, $this->page->render(
             $draft,
             $this->csrfToken(),
-            $error === null ? 'Збережено.' : null,
+            $error === null ? CmsText::t('save.saved', [], 'Saved.') : null,
             $error,
             $warning,
         ));
@@ -171,7 +176,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
      * in one transaction with it. So the two halves fail differently and must
      * be reported differently. Before the write, a failure means nothing was
      * saved and the page says so. After it, the text IS saved — reporting that
-     * as «Не вдалося зберегти» sends the author back to retype what is already
+     * as «Could not save» sends the author back to retype what is already
      * there, or to go looking for damage that does not exist, and the next
      * thing they do is save again over their own good copy.
      *
@@ -357,7 +362,11 @@ final class ContentSaveHandler implements TypedHandlerInterface
             // and landed in the record with its spaces — where isCalendarDay(),
             // the very same test, calls it malformed on the way back out.
             if (!ContentField::isCalendarDay($submitted)) {
-                return 'Поле «' . $field->label . '»: «' . $submitted . '» — не дата. Формат: РРРР-ММ-ДД.';
+                return CmsText::t(
+                    'save.bad_date',
+                    ['field' => $field->label, 'value' => $submitted],
+                    'Field “{{field}}”: “{{value}}” is not a date. Format: YYYY-MM-DD.',
+                );
             }
         }
 
@@ -372,7 +381,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
             }
 
             if (!self::hasContent($values[$field->name] ?? '', $field->kind)) {
-                return 'Заповніть поле «' . $field->label . '».';
+                return CmsText::t('save.required', ['field' => $field->label], 'Fill in the field “{{field}}”.');
             }
         }
 

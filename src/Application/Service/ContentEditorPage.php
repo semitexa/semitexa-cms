@@ -36,34 +36,8 @@ final class ContentEditorPage
     protected SeoStore $seoStore;
 
     /**
-     * The metadata fields the panel offers, in the order an author reads them.
-     *
-     * `jsonLd` is generated but deliberately absent: it is a graph for machines,
-     * and a textarea of raw JSON in a content console is a way to store
-     * something no crawler can parse. It regenerates freely and nobody has to
-     * look at it.
-     *
-     * @var array<string, array{0: string, 1: string}> field => [label, hint]
-     */
-    /**
-     * Label and hint for each field the editor owns. The KEYS are not declared
-     * here — they are {@see ContentSeo::EDITOR_FIELDS}, which is also what the
-     * request accepts, so the form and the gate cannot drift into disagreeing
-     * about which fields an author may set.
-     */
-    private const SEO_FIELDS = [
-        'title' => ['Заголовок у пошуку', ''],
-        'description' => ['Опис у пошуку', 'Приблизно 160 символів — далі Google обрізає.'],
-        'ogTitle' => ['Заголовок у соцмережах', ''],
-        'ogDescription' => ['Опис у соцмережах', ''],
-        'ogImage' => ['Картинка для соцмереж', 'Адреса зображення, яке показують при поширенні.'],
-        'canonical' => ['Канонічна адреса', 'Головна адреса сторінки, якщо їх кілька.'],
-        'robots' => ['Індексація', 'Наприклад index,follow або noindex.'],
-    ];
-
-    /**
      * @param ?string $warning something the save took away, when it did. Shown
-     *                         in place of «Збережено.» rather than beside it:
+     *                         in place of «Saved.» rather than beside it:
      *                         one notice line, and the thing worth reading is
      *                         the loss, not the success it happened under.
      */
@@ -77,7 +51,7 @@ final class ContentEditorPage
         // Editing a page is writing, not filling in a form. So the draft is
         // split by what the author is actually doing: the name of the thing,
         // the thing itself, and the settings about it. Only the first two are
-        // on the canvas; everything else waits behind «Властивості» until it
+        // on the canvas; everything else waits behind «Properties» until it
         // is asked for. A flat list of equal-weight fields makes the author
         // decide, on every visit, which of them today's work is about.
         [$titleField, $bodyField, $rest] = self::split($draft->fields);
@@ -108,7 +82,8 @@ final class ContentEditorPage
 
         $view = $draft->publicUrl === null || $draft->publicUrl === ''
             ? ''
-            : '<a class="ghost" href="' . $this->escape($draft->publicUrl) . '" target="_blank" rel="noopener">Подивитись&nbsp;↗</a>';
+            : '<a class="ghost" href="' . $this->escape($draft->publicUrl) . '" target="_blank" rel="noopener">'
+                . CmsText::html('editor.view', [], 'View') . '&nbsp;↗</a>';
 
         $titleControl = $titleField === null
             ? ''
@@ -124,8 +99,18 @@ final class ContentEditorPage
                 . $this->bodyControl($bodyField, self::positionOf($draft->fields, $bodyField))
                 // Once per page, and here rather than inside a control: it is a
                 // property of having a writing surface at all, and a draft with
-                // two rich fields would otherwise say it twice.
-                . (self::isWritingSurface($bodyField) ? self::APPEARANCE_NOTE : '')
+                // two rich fields would otherwise say it twice. Color and font
+                // are not missing, they are REFUSED — the skin system makes a
+                // site look like itself on every page, and a color picker here
+                // would undo that one paragraph at a time. A decision made and
+                // never explained reads exactly like a bug; this is the sentence
+                // that separates the two.
+                . (self::isWritingSurface($bodyField) ? '<p class="hint">' . CmsText::html(
+                    'editor.appearance_note',
+                    [],
+                    'Color and font come from the design of the site — so every page looks the same,'
+                    . ' and changing the design changes them everywhere at once.',
+                ) . '</p>' : '')
                 . '</div>';
         }
 
@@ -137,20 +122,29 @@ final class ContentEditorPage
         }
         $panelFields .= $this->seoSection($draft->ref);
 
+        $properties = CmsText::html('editor.properties', [], 'Properties');
         $panel = '';
         $panelButton = '';
         if ($panelFields !== '') {
-            $panel = '<aside class="panel" id="panel" aria-label="Властивості">'
-                . '<div class="panel__head"><span>Властивості</span>'
-                . '<button class="icon" type="button" data-act="props" aria-label="Закрити">×</button></div>'
+            $panel = '<aside class="panel" id="panel" aria-label="' . $properties . '">'
+                . '<div class="panel__head"><span>' . $properties . '</span>'
+                . '<button class="icon" type="button" data-act="props" aria-label="'
+                . CmsText::html('editor.close', [], 'Close') . '">×</button></div>'
                 . '<div class="panel__body">' . $panelFields . '</div></aside>';
-            $panelButton = '<button class="ghost" type="button" data-act="props" aria-expanded="false" aria-controls="panel">Властивості</button>';
+            $panelButton = '<button class="ghost" type="button" data-act="props" aria-expanded="false" aria-controls="panel">'
+                . $properties . '</button>';
         }
+
+        $lang = CmsText::language();
+        $strings = CmsText::scriptStrings();
+        $stateSaved = CmsText::html('editor.state.saved', [], 'Saved');
+        $saveLabel = CmsText::html('editor.save', [], 'Save');
 
         return <<<HTML
 <!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="{$lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{$title}</title>
+{$strings}
 {$richHead}
 <style>
   *{box-sizing:border-box} html,body{margin:0;height:100%}
@@ -261,8 +255,8 @@ final class ContentEditorPage
     <input type="hidden" name="_csrf" value="{$token}">
 
     <header class="top">
-      <span class="state" id="state" data-state="clean" aria-live="polite">Збережено</span>
-      <span class="top__acts">{$view}{$panelButton}<button class="primary" type="submit">Зберегти</button></span>
+      <span class="state" id="state" data-state="clean" aria-live="polite">{$stateSaved}</span>
+      <span class="top__acts">{$view}{$panelButton}<button class="primary" type="submit">{$saveLabel}</button></span>
     </header>
     {$notice}
 
@@ -302,7 +296,7 @@ HTML;
             }
             // A page of blocks is the thing itself just as a rich field is.
             // Recognising only HTML here put a BLOCKS body behind
-            // «Властивості» — the page's own content in a settings drawer,
+            // «Properties» — the page's own content in a settings drawer,
             // which every test passed while the editor was wrong.
             if ($body === null && ($field->kind === ContentField::HTML || $field->kind === ContentField::BLOCKS)) {
                 $body = $field;
@@ -367,7 +361,7 @@ HTML;
      * violation it is unable to show. This panel is `display:none` until the
      * author opens it, and a hidden control is not focusable — so the browser
      * refuses the submit, declines to focus anything, and says nothing. The
-     * Зберегти button simply stops working, with no message anywhere.
+     * Save button simply stops working, with no message anywhere.
      *
      * MEASURED in Chrome on the rendered markup: with the panel closed,
      * `form.reportValidity()` is false and `document.activeElement` is
@@ -421,13 +415,18 @@ HTML;
 
         $fields = '';
         foreach (ContentSeo::EDITOR_FIELDS as $name) {
-            [$label, $hint] = self::SEO_FIELDS[$name];
+            [$label, $hint] = ContentSeoLabels::of($name);
             $fields .= $this->seoField($seo, $name, $label, $hint);
         }
 
-        return '<div class="seo"><div class="seo__head">Для пошуку і соцмереж</div>'
-            . '<p class="hint">Порожнє поле CMS заповнює сама, з тексту сторінки — сіре нижче саме звідти.'
-            . ' Напишіть своє, і воно перестане оновлюватись; зітріть — і повернеться підказка.</p>'
+        return '<div class="seo"><div class="seo__head">'
+            . CmsText::html('seo.heading', [], 'For search and social media') . '</div>'
+            . '<p class="hint">' . CmsText::html(
+                'seo.intro',
+                [],
+                'The CMS fills an empty field itself, from the text of the page — the gray text below comes from there.'
+                . ' Write your own and it stops updating; erase it and the suggestion comes back.',
+            ) . '</p>'
             . $fields . '</div>';
     }
 
@@ -438,10 +437,10 @@ HTML;
         $generatable = in_array($name, ContentSeo::GENERATED_FIELDS, true);
 
         $tag = match (true) {
-            $authored => '<span class="tag tag--mine">ваше</span>',
+            $authored => '<span class="tag tag--mine">' . CmsText::html('seo.tag.mine', [], 'yours') . '</span>',
             !$generatable => '',
-            $value !== '' => '<span class="tag">згенеровано</span>',
-            default => '<span class="tag tag--none">ще не згенеровано</span>',
+            $value !== '' => '<span class="tag">' . CmsText::html('seo.tag.generated', [], 'generated') . '</span>',
+            default => '<span class="tag tag--none">' . CmsText::html('seo.tag.none', [], 'not generated yet') . '</span>',
         };
 
         // A generated value is a placeholder, never a value — see seoSection().
@@ -553,7 +552,8 @@ HTML;
     {
         $has = $assetId !== '';
         $preview = '<img class="cover__img" src="' . $previewUrl . '" alt=""' . ($has ? '' : ' hidden') . '>';
-        $empty = '<span class="cover__empty"' . ($has ? ' hidden' : '') . '>Немає зображення</span>';
+        $empty = '<span class="cover__empty"' . ($has ? ' hidden' : '') . '>'
+            . CmsText::html('image.none', [], 'No image') . '</span>';
 
         // A block's picture has no NAME: the page submits through one input the
         // console writes, and a named input here would arrive in
@@ -569,8 +569,11 @@ HTML;
             // out of the tab order, and the label around it is not focusable
             // either, so a keyboard-only author could not choose an image at all.
             . '<label class="cover__pick"><input type="file" accept="image/*" class="cover__file">'
-            . '<span>' . ($has ? 'Замінити' : 'Вибрати зображення') . '</span></label>'
-            . '<button type="button" class="cover__clear"' . ($has ? '' : ' hidden') . '>Прибрати</button>'
+            . '<span>' . ($has
+                ? CmsText::html('image.replace', [], 'Replace')
+                : CmsText::html('image.choose', [], 'Choose image')) . '</span></label>'
+            . '<button type="button" class="cover__clear"' . ($has ? '' : ' hidden') . '>'
+            . CmsText::html('image.remove', [], 'Remove') . '</button>'
             . '</div>'
             . '<span class="cover__err" hidden></span>'
             . '</div>';
@@ -603,22 +606,6 @@ HTML;
         return '<input id="' . $id . '" type="hidden" name="' . $escapedName . '" value="' . $escapedValue . '"' . $required . '>'
             . '<trix-editor input="' . $id . '" class="rich"></trix-editor>';
     }
-
-    /**
-     * Where appearance comes from, said once, under the writing surface.
-     *
-     * A site's own editor looked for text colour and a font, did not find
-     * them, and asked. They are not missing — they are REFUSED, because this
-     * framework has a skin system so a site looks like itself on every page,
-     * and a colour picker in an editor undoes that one paragraph at a time.
-     *
-     * A decision made and never explained reads exactly like a bug. This is
-     * the sentence that separates the two, and it costs nothing: it is not a
-     * control, it is the reason there is no control.
-     */
-    private const APPEARANCE_NOTE =
-        '<p class="hint">Колір і шрифт бере оформлення сайту — так кожна сторінка виглядає однаково,'
-        . ' і зміна оформлення міняє їх усюди разом.</p>';
 
     /**
      * Stylesheet, script and CSP nonce for the vendored editor.
