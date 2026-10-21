@@ -61,6 +61,22 @@ final class ContentBlockCodec
     }
 
     /** @return list<ContentBlock> */
+    /** A JSON object whose `format` is this codec's: a blocks document, readable or not. */
+    public function isMarkedDocument(string $value): bool
+    {
+        $trimmed = trim($value);
+        if (!str_contains($trimmed, self::MARKER) || !str_starts_with($trimmed, '{')) {
+            return false;
+        }
+        try {
+            $decoded = json_decode($trimmed, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return false;
+        }
+
+        return is_array($decoded) && ($decoded['format'] ?? null) === self::MARKER;
+    }
+
     public function decode(string $value): array
     {
         // TRIMMED decides; the ORIGINAL is what gets kept. The promise this
@@ -189,7 +205,10 @@ final class ContentBlockCodec
      */
     public function isUnreadableDocument(string $value): bool
     {
-        if (!str_contains($value, self::MARKER)) {
+        // A DOCUMENT, not a string that mentions the format: HTML carrying the
+        // marker text was taken for one, kept unsanitised by the save, and
+        // printed as markup on the public page.
+        if (!$this->isMarkedDocument($value)) {
             return false;
         }
 

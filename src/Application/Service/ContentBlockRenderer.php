@@ -10,7 +10,10 @@ use Semitexa\Cms\Domain\Model\ContentBlock;
  * A page's blocks, as the markup a visitor gets.
  *
  * The layout an author chose arrives here as NAMES — center, medium — and
- * leaves as data attributes for the skin to style. That is the whole reason
+ * leaves as data attributes for the skin to style — on a `cms-block` element,
+ * so a stylesheet can aim at blocks and nothing else that carries the same
+ * attribute names. `css/content-blocks.css` is the default the skin overrides;
+ * cms_blocks() in a template requires it. That is the whole reason
  * layout lives on the block: the skin decides what "center" looks like, a skin
  * swap keeps it meaning the same thing, and nothing about appearance is stored
  * with the words.
@@ -42,6 +45,13 @@ final class ContentBlockRenderer
             if ($block->isEmpty() && $block->isText()) {
                 continue;
             }
+            // A blocks document this version cannot read comes back as one
+            // text block holding the whole document. It is kept for a newer
+            // editor, never sanitised, so it is never printed: a page with
+            // nothing on it beats one that runs what an unknown block held.
+            if ($block->isText() && (new ContentBlockCodec())->isMarkedDocument($block->payload)) {
+                continue;
+            }
 
             $html .= $block->isText() ? $this->text($block) : $this->image($block);
         }
@@ -54,7 +64,7 @@ final class ContentBlockRenderer
         // Byte-identical to the old single-field page when nothing was chosen.
         return $block->layout->isDefault()
             ? $block->payload
-            : '<div' . $block->layout->attributes() . '>' . $block->payload . '</div>';
+            : '<div class="cms-block"' . $block->layout->attributes() . '>' . $block->payload . '</div>';
     }
 
     private function image(ContentBlock $block): string
@@ -66,7 +76,7 @@ final class ContentBlockRenderer
         // alt is always emitted, empty included: an empty alt says "decorative"
         // to a screen reader, while a missing one says "guess", and the guess is
         // the file name.
-        return '<figure' . $block->layout->attributes() . '>'
+        return '<figure class="cms-block"' . $block->layout->attributes() . '>'
             . '<img src="' . self::MEDIA_ROUTE . rawurlencode($block->payload) . '"'
             . ' alt="' . htmlspecialchars($block->alt, ENT_QUOTES, 'UTF-8') . '">'
             . '</figure>';

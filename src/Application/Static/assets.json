@@ -2,6 +2,10 @@
     "$schema": "semitexa://asset-manifest/v2",
     "module": "cms",
     "include": {
+        "css": ["css/*.css"],
         "js": ["js/*.js"]
+    },
+    "overrides": {
+        "css/content-blocks.css": { "scope": "page" }
     }
 }
