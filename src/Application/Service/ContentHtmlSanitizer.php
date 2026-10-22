@@ -61,6 +61,8 @@ final class ContentHtmlSanitizer
 
     private ?HtmlSanitizer $sanitizer = null;
 
+    private ?HtmlSanitizer $display = null;
+
     /**
      * Which image addresses survive. Lazily defaulted rather than required,
      * so this class still stands up under a bare `new` — the default answers
@@ -172,6 +174,37 @@ final class ContentHtmlSanitizer
         $refused = [];
 
         return $this->clean($html, $refused);
+    }
+
+    /**
+     * Markup as it may reach a visitor, whoever stored it: the safe elements
+     * a page is written in (paragraphs, headings, lists, tables, figures,
+     * links and images over http, https, mailto and tel, or relative), and
+     * no script, handler, frame, form, style, class, id or name. Media from
+     * any host passes: only the editor holds images to ContentImageSources. Wider than what the editor
+     * stores, on purpose: it guards the page, while the editor's allowlist
+     * shapes what an author writes, and a page written before the editor —
+     * in paragraphs — would otherwise print empty.
+     */
+    public function forDisplay(string $html): string
+    {
+        $this->display ??= new HtmlSanitizer((new HtmlSanitizerConfig())
+            ->allowSafeElements()
+            ->allowLinkSchemes(self::LINK_SCHEMES)
+            ->allowMediaSchemes(['http', 'https'])
+            ->allowRelativeLinks()
+            ->allowRelativeMedias()
+            // rel=opener with target=_blank hands the visitor's tab to the
+            // linked page (reverse tabnabbing).
+            ->forceAttribute('a', 'rel', 'noopener noreferrer')
+            // A stored id or name can clobber window globals and
+            // getElementById() for the page's own scripts.
+            ->dropAttribute('id', '*')
+            ->dropAttribute('name', '*')
+            // No silent cut: a long page prints whole (see MAX_BYTES).
+            ->withMaxInputLength(-1));
+
+        return $this->display->sanitize($html);
     }
 
     /**

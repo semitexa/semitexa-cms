@@ -115,6 +115,14 @@ final class ContentBlockCodecTest extends TestCase
     }
 
     #[Test]
+    public function anUnreadableDocumentWithSurroundingWhitespaceIsStillLeftAlone(): void
+    {
+        $stored = "\n" . '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"video","payload":"x"},{"kind":"text","payload":"<p>keep</p>"}]}' . "\n";
+
+        self::assertTrue((new ContentBlockCodec())->isUnreadableDocument($stored));
+    }
+
+    #[Test]
     public function anEmptyValueIsAnEmptyPageAndNotOneEmptyBlock(): void
     {
         self::assertSame([], $this->codec->decode(''));

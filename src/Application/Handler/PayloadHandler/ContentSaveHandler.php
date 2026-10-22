@@ -87,12 +87,14 @@ final class ContentSaveHandler implements TypedHandlerInterface
             return $this->html($resource, $this->answers->renderMissing($ref));
         }
 
+        $submitted = self::declaredValues($before, $payload->submittedValues());
+
         // Nothing in the browser enforces `required` on these fields: the rich
         // one is a hidden input, which is barred from constraint validation,
         // and a form can be posted without ever loading our page anyway. This
         // is the gate.
-        $error = self::missingRequired($before, $payload->submittedValues())
-            ?? self::malformedDate($before, $payload->submittedValues());
+        $error = self::missingRequired($before, $submitted)
+            ?? self::malformedDate($before, $submitted);
         $warning = null;
 
         // Whether the author's text reached the record. Everything after that
@@ -107,7 +109,7 @@ final class ContentSaveHandler implements TypedHandlerInterface
         try {
             if ($error === null) {
                 $clean = $this->sanitizer->sanitizeValues(
-                    $payload->submittedValues(),
+                    $submitted,
                     self::htmlFieldNames($before),
                     self::blockFieldNames($before),
                 );
@@ -448,6 +450,19 @@ final class ContentSaveHandler implements TypedHandlerInterface
     private static function blockFieldNames(ContentDraft $draft): array
     {
         return self::fieldNamesOfKind($draft, ContentField::BLOCKS);
+    }
+
+    /**
+     * Only the fields the record declared: a markup value under a name it did
+     * not declare is not known to be markup, so it reached the module
+     * unsanitised.
+     *
+     * @param array<string, string> $values
+     * @return array<string, string>
+     */
+    private static function declaredValues(ContentDraft $draft, array $values): array
+    {
+        return array_intersect_key($values, array_flip(array_map(static fn (ContentField $field): string => $field->name, $draft->fields)));
     }
 
     /** @return list<string> */

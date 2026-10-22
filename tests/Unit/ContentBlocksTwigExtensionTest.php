@@ -38,6 +38,36 @@ final class ContentBlocksTwigExtensionTest extends TestCase
         self::assertSame([], self::required());
     }
 
+    /**
+     * The save was the only gate: rows saved while the sanitiser could be
+     * skipped (a value naming the blocks format), imports and direct writes
+     * printed as stored.
+     */
+    #[Test]
+    public function a_script_that_reached_a_row_without_the_editor_is_not_printed(): void
+    {
+        $legacy = 'semitexa.cms.blocks/v1 <p>Текст</p><img src=x onerror=alert(document.domain)>';
+        $blocks = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payload":"<p>hi</p><img src=x onerror=alert(1)><a href=\"javascript:alert(2)\">x</a>","layout":{"align":"center","size":"medium"}}]}';
+
+        foreach ([$legacy, $blocks] as $stored) {
+            $html = (string) (new ContentBlocksTwigExtension())->render($stored);
+            self::assertStringNotContainsString('onerror', $html);
+            self::assertStringNotContainsString('javascript:', $html);
+        }
+        self::assertStringContainsString('<p>Текст</p>', (string) (new ContentBlocksTwigExtension())->render($legacy), 'the words stay');
+    }
+
+    #[Test]
+    public function a_link_cannot_take_the_visitor_s_tab_or_clobber_the_page_s_globals(): void
+    {
+        $html = (string) (new ContentBlocksTwigExtension())->render('<p><a id="config" name="cfg" href="https://example.test/" target="_blank" rel="opener">x</a></p>');
+
+        self::assertStringContainsString('rel="noopener noreferrer"', $html);
+        self::assertStringNotContainsString('opener"', str_replace('noopener', '', $html));
+        self::assertStringNotContainsString('id=', $html);
+        self::assertStringNotContainsString('name=', $html);
+    }
+
     #[Test]
     public function stored_blocks_print_as_markup_with_their_layout_and_the_stylesheet(): void
     {

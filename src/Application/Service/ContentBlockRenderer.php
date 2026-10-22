@@ -20,18 +20,29 @@ use Semitexa\Cms\Domain\Model\ContentBlock;
  *
  * A DEFAULT BLOCK RENDERS AS ITS PAYLOAD AND NOTHING ELSE, and that property is
  * load-bearing rather than tidy: every page written before this format decodes
- * to one default text block, so a migrated page renders byte-for-byte what it
- * rendered before. A migration nobody can see is the only kind worth running on
- * somebody's live site.
+ * to one default text block, so a migrated page renders what it rendered
+ * before — no wrapper, no layout — apart from what the display sanitiser
+ * takes out (scripts, handlers, styles). A migration nobody can see is the
+ * only kind worth running on somebody's live site.
  *
  * An image is rendered from its asset ID through the console's media route,
  * never from a stored URL — {@see \Semitexa\Cms\Domain\Model\ContentField::IMAGE}
  * states why: a URL beside the id is a second copy of a fact the media service
  * owns, and moving the storage would invalidate every page that cached one.
+ *
+ * Text is sanitised HERE, at the last step before the visitor, not trusted
+ * from the save: rows saved by a release whose sanitiser could be skipped,
+ * imports, seeds, a module's own admin and direct writes never passed
+ * through it, and cms_blocks() prints its answer as markup.
  */
 final class ContentBlockRenderer
 {
     private const MEDIA_ROUTE = '/os/app/cms/media/';
+
+    /** @param ContentHtmlSanitizer|null $sanitizer the container's; a bare one otherwise */
+    public function __construct(private ?ContentHtmlSanitizer $sanitizer = null)
+    {
+    }
 
     /** @param list<ContentBlock> $blocks */
     public function render(array $blocks): string
@@ -61,10 +72,13 @@ final class ContentBlockRenderer
 
     private function text(ContentBlock $block): string
     {
-        // Byte-identical to the old single-field page when nothing was chosen.
+        $this->sanitizer ??= new ContentHtmlSanitizer();
+        $payload = $this->sanitizer->forDisplay($block->payload);
+
+        // The old single-field page, sanitised, when nothing was chosen.
         return $block->layout->isDefault()
-            ? $block->payload
-            : '<div class="cms-block"' . $block->layout->attributes() . '>' . $block->payload . '</div>';
+            ? $payload
+            : '<div class="cms-block"' . $block->layout->attributes() . '>' . $payload . '</div>';
     }
 
     private function image(ContentBlock $block): string

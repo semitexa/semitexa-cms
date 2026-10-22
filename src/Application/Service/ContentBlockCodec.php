@@ -60,7 +60,6 @@ final class ContentBlockCodec
         }
     }
 
-    /** @return list<ContentBlock> */
     /** A JSON object whose `format` is this codec's: a blocks document, readable or not. */
     public function isMarkedDocument(string $value): bool
     {
@@ -77,6 +76,7 @@ final class ContentBlockCodec
         return is_array($decoded) && ($decoded['format'] ?? null) === self::MARKER;
     }
 
+    /** @return list<ContentBlock> */
     public function decode(string $value): array
     {
         // TRIMMED decides; the ORIGINAL is what gets kept. The promise this
@@ -214,8 +214,11 @@ final class ContentBlockCodec
 
         $blocks = $this->decode($value);
 
+        // decode() keeps the value as given, surrounding whitespace and all: a
+        // document with a trailing newline compared unequal to its trimmed
+        // self, was re-encoded as text, and lost its structure on save.
         return count($blocks) === 1
             && $blocks[0]->isText()
-            && $blocks[0]->payload === trim($value);
+            && in_array($blocks[0]->payload, [$value, trim($value)], true);
     }
 }
