@@ -433,4 +433,15 @@ final class ContentHtmlSanitizerTest extends TestCase
 
         return self::createWithDependencies(ContentHtmlSanitizer::class, ['sources' => $sources]);
     }
+
+    /** A model's translation, an import and pasted markup write <p>: removed with its text. */
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function a_paragraph_is_kept_and_a_strays_text_survives_but_a_script_goes_whole(): void
+    {
+        $sanitizer = new \Semitexa\Cms\Application\Service\ContentHtmlSanitizer();
+
+        self::assertSame('<p>Привіт</p>', $sanitizer->sanitize('<p>Привіт</p>'));
+        self::assertSame('Title text', $sanitizer->sanitize('<h2>Title</h2><span> text</span>'));
+        self::assertSame('<p>Hi</p>', $sanitizer->sanitize('<p>Hi</p><script>steal()</script><style>a{}</style>'));
+    }
 }

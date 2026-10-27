@@ -415,9 +415,32 @@ final class ContentHtmlSanitizer
             ->allowElement('figure')
             ->allowElement('figcaption')
             ->allowElement('img', ['src', 'alt', 'width', 'height'])
-            // Text inside a dropped element is kept — losing an author's
-            // paragraph because it carried a stray tag would be its own kind of
-            // data loss, and the text was never the dangerous part.
+            // A paragraph: the editor writes divs, but a model's translation,
+            // an import and pasted markup write <p>, and every one of them was
+            // removed with its text.
+            ->allowElement('p')
+            // Text inside a container the content has no use for is kept —
+            // losing an author's paragraph because it carried a stray tag would
+            // be its own kind of data loss, and the text was never the
+            // dangerous part. Only these: an element not named anywhere is
+            // removed WITH its content (the library's default), which is what
+            // a script or a style must get.
+            ->blockElement('span')
+            ->blockElement('font')
+            ->blockElement('section')
+            ->blockElement('article')
+            ->blockElement('header')
+            ->blockElement('footer')
+            ->blockElement('main')
+            ->blockElement('h2')
+            ->blockElement('h3')
+            ->blockElement('h4')
+            ->blockElement('h5')
+            ->blockElement('h6')
+            ->blockElement('b')
+            ->blockElement('i')
+            ->blockElement('u')
+            ->blockElement('small')
             ->allowRelativeLinks()
             ->allowLinkSchemes(self::LINK_SCHEMES)
             // An image may be relative, or it may name a host over http(s) —
