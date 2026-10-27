@@ -91,7 +91,7 @@ final class SeoWriterTest extends TestCase
     public function emptying_a_page_clears_what_was_generated_for_it(): void
     {
         $empty = new ContentDraft(ref: 'page:about', title: 'About', fields: []);
-        $seo = new ContentSeo(ref: 'page:about', title: 'About us', description: 'Old words.', ogDescription: 'Old words.', jsonLd: '{"@type":"WebPage"}', authored: ['title'], sourceHash: 'old');
+        $seo = new ContentSeo(ref: 'page:about', title: 'About us', description: 'Old words.', ogTitle: 'Old title.', ogDescription: 'Old words.', jsonLd: '{"@type":"WebPage"}', authored: ['title'], sourceHash: 'old');
 
         $written = $this->writer('{}', function (): void {
             self::fail('a model asked to describe nothing will invent something');
