@@ -173,6 +173,25 @@ final class BlocksGoThroughTheAllowlistTest extends TestCase
         );
 
         self::assertStringNotContainsString('onerror', $clean->values['body']);
+        $blocks = (new ContentBlockCodec())->decode($clean->values['body']);
+        self::assertCount(1, $blocks);
+        self::assertSame('semitexa.cms.blocks/v1', $blocks[0]->payload, 'cleaned, and the words kept');
+    }
+
+    /**
+     * A document cut short no longer parses, but still opens with the format's
+     * declaration: read as text, the save HTML-escaped its quotes and stored a
+     * fresh document over the original bytes.
+     */
+    #[Test]
+    public function aTruncatedDocumentIsKeptByteForByte(): void
+    {
+        $truncated = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payl';
+
+        $clean = $this->sanitizer->sanitizeValues(['body' => $truncated], [], ['body']);
+
+        self::assertSame($truncated, $clean->values['body']);
+        self::assertSame('', (string) (new \Semitexa\Cms\Application\Service\Twig\ContentBlocksTwigExtension())->render($truncated), 'kept, never printed');
     }
 
     /** A document of a newer version is kept for its editor — and never printed as markup. */

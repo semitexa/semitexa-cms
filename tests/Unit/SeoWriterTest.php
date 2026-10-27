@@ -86,6 +86,23 @@ final class SeoWriterTest extends TestCase
         self::assertSame('h', $written->sourceHash);
     }
 
+    /** Emptied, a page keeps no description of the words it no longer has; what a person wrote stays. */
+    #[Test]
+    public function emptying_a_page_clears_what_was_generated_for_it(): void
+    {
+        $empty = new ContentDraft(ref: 'page:about', title: 'About', fields: []);
+        $seo = new ContentSeo(ref: 'page:about', title: 'About us', description: 'Old words.', ogDescription: 'Old words.', jsonLd: '{"@type":"WebPage"}', authored: ['title'], sourceHash: 'old');
+
+        $written = $this->writer('{}', function (): void {
+            self::fail('a model asked to describe nothing will invent something');
+        })->write($seo, $empty, 'h');
+
+        self::assertSame(
+            ['About us', '', '', '', '', 'h'],
+            [$written->title, $written->description, $written->ogTitle, $written->ogDescription, $written->jsonLd, $written->sourceHash],
+        );
+    }
+
     /**
      * What a live model actually returns. Requiring a string here silently
      * dropped a complete, correct schema.org graph on every real page — the

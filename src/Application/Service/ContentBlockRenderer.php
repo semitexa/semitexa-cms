@@ -60,7 +60,10 @@ final class ContentBlockRenderer
             // text block holding the whole document. It is kept for a newer
             // editor, never sanitised, so it is never printed: a page with
             // nothing on it beats one that runs what an unknown block held.
-            if ($block->isText() && (new ContentBlockCodec())->isMarkedDocument($block->payload)) {
+            // Asked of the document, not of any passage that looks like one:
+            // a text block whose words are a readable blocks document is
+            // the author's text and prints like any other.
+            if ($block->isText() && (new ContentBlockCodec())->isUnreadableDocument($block->payload)) {
                 continue;
             }
 

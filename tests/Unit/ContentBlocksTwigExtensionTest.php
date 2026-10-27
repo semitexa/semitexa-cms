@@ -10,6 +10,7 @@ use Semitexa\Cms\Application\Service\ContentBlockCodec;
 use Semitexa\Cms\Application\Service\Twig\ContentBlocksTwigExtension;
 use Semitexa\Cms\Domain\Model\BlockLayout;
 use Semitexa\Cms\Domain\Model\ContentBlock;
+use Semitexa\Ssr\Application\Service\Asset\AssetCollector;
 use Semitexa\Ssr\Application\Service\Asset\AssetCollectorStore;
 
 /**
@@ -19,14 +20,25 @@ use Semitexa\Ssr\Application\Service\Asset\AssetCollectorStore;
  */
 final class ContentBlocksTwigExtensionTest extends TestCase
 {
+    /** The collector another test or the suite left, set aside rather than emptied. */
+    private ?AssetCollector $previous;
+
     protected function setUp(): void
     {
-        AssetCollectorStore::reset();
+        // reset() empties the collector it finds: take it out first.
+        $this->previous = self::collector()->getValue();
+        self::collector()->setValue(null, null);
     }
 
     protected function tearDown(): void
     {
         AssetCollectorStore::reset();
+        self::collector()->setValue(null, $this->previous);
+    }
+
+    private static function collector(): \ReflectionProperty
+    {
+        return new \ReflectionProperty(AssetCollectorStore::class, 'staticFallback');
     }
 
     #[Test]
@@ -49,12 +61,12 @@ final class ContentBlocksTwigExtensionTest extends TestCase
         $legacy = 'semitexa.cms.blocks/v1 <p>Текст</p><img src=x onerror=alert(document.domain)>';
         $blocks = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payload":"<p>hi</p><img src=x onerror=alert(1)><a href=\"javascript:alert(2)\">x</a>","layout":{"align":"center","size":"medium"}}]}';
 
-        foreach ([$legacy, $blocks] as $stored) {
+        foreach ([$legacy => '<p>Текст</p>', $blocks => '<p>hi</p>'] as $stored => $words) {
             $html = (string) (new ContentBlocksTwigExtension())->render($stored);
             self::assertStringNotContainsString('onerror', $html);
             self::assertStringNotContainsString('javascript:', $html);
+            self::assertStringContainsString($words, $html, 'the words stay');
         }
-        self::assertStringContainsString('<p>Текст</p>', (string) (new ContentBlocksTwigExtension())->render($legacy), 'the words stay');
     }
 
     #[Test]

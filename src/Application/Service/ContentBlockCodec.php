@@ -70,7 +70,12 @@ final class ContentBlockCodec
         try {
             $decoded = json_decode($trimmed, true, 64, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            return false;
+            // A document cut short (a column too narrow, a half-written row)
+            // no longer parses but still opens with the declaration encode()
+            // writes first. Read as text, the save sanitised it and stored
+            // a different document over the original bytes. Only that opening
+            // counts: HTML that mentions the format does not start with it.
+            return preg_match('#^\{\s*"format"\s*:\s*"' . preg_quote(self::MARKER, '#') . '"#', $trimmed) === 1;
         }
 
         return is_array($decoded) && ($decoded['format'] ?? null) === self::MARKER;

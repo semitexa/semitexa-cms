@@ -67,8 +67,10 @@ final class SeoWriter
         $body = $this->body($draft);
         if (trim($body) === '') {
             // An empty page has nothing to say about itself, and a model asked
-            // to describe nothing will invent something.
-            return $seo->withGenerated([], $sourceHash);
+            // to describe nothing will invent something. What was generated
+            // for the words it used to hold goes with them: kept, it was
+            // stamped with the new hash and described a page no longer there.
+            return $seo->withGenerated(array_fill_keys($requested, ''), $sourceHash);
         }
 
         $prompt = (new SeoWriterPrompt())->withData(

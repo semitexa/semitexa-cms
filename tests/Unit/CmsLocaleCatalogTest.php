@@ -54,15 +54,22 @@ final class CmsLocaleCatalogTest extends TestCase
 
     private string|false $osLocale = false;
 
+    /** @var array<string, string> the package locale dirs registered before this test */
+    private array $packageLocaleDirs = [];
+
     protected function setUp(): void
     {
+        // reset() leaves the package dirs registered: set them aside too, or
+        // a catalog another test loaded answers in place of the English.
+        $this->packageLocaleDirs = (new \ReflectionProperty(Translator::class, 'packageLocaleDirs'))->getValue();
+        Translator::setPackageLocaleDirs([]);
         Translator::reset();
         $this->osLocale = getenv('SEMITEXA_OS_LOCALE');
     }
 
     protected function tearDown(): void
     {
-        Translator::setPackageLocaleDirs([]);
+        Translator::setPackageLocaleDirs($this->packageLocaleDirs);
         Translator::reset();
         putenv($this->osLocale === false ? 'SEMITEXA_OS_LOCALE' : 'SEMITEXA_OS_LOCALE=' . $this->osLocale);
     }
@@ -101,7 +108,7 @@ final class CmsLocaleCatalogTest extends TestCase
             }
             $relative = str_replace(self::SRC . '/', '', $file->getPathname());
 
-            $source = (string) file_get_contents($file->getPathname());
+            $source = self::read($file->getPathname());
             if (preg_match('/[\x{0400}-\x{04FF}]/u', $source) !== 1) {
                 continue;
             }
@@ -159,7 +166,7 @@ final class CmsLocaleCatalogTest extends TestCase
         $checked = 0;
 
         foreach (glob(self::JS . '/*.js') ?: [] as $file) {
-            preg_match_all("/\\bt\\('([^']+)',\\s*'((?:[^'\\\\]|\\\\.)*)'\\)/u", (string) file_get_contents($file), $m, PREG_SET_ORDER);
+            preg_match_all("/\\bt\\('([^']+)',\\s*'((?:[^'\\\\]|\\\\.)*)'\\)/u", self::read($file), $m, PREG_SET_ORDER);
             foreach ($m as [, $key, $fallback]) {
                 self::assertArrayHasKey($key, $sent, basename($file) . " asks for '{$key}', which the page never sends");
                 self::assertSame($sent[$key], stripslashes($fallback), basename($file) . ": '{$key}' falls back to different English");
@@ -232,7 +239,7 @@ final class CmsLocaleCatalogTest extends TestCase
     /** @return array<string, string> */
     private function catalog(string $locale): array
     {
-        $decoded = json_decode((string) file_get_contents(self::LOCALES . '/' . $locale . '.json'), true);
+        $decoded = json_decode(self::read(self::LOCALES . '/' . $locale . '.json'), true);
         self::assertIsArray($decoded, "{$locale}.json is not a JSON object");
 
         /** @var array<string, string> $decoded */
@@ -280,7 +287,7 @@ final class CmsLocaleCatalogTest extends TestCase
             if (!$file->isFile() || $file->getExtension() !== 'php') {
                 continue;
             }
-            foreach ($this->callsIn((string) file_get_contents($file->getPathname())) as $key => $fallback) {
+            foreach ($this->callsIn(self::read($file->getPathname())) as $key => $fallback) {
                 self::assertTrue(
                     !isset($found[$key]) || $found[$key] === $fallback,
                     "'{$key}' is written with two different English sentences",
@@ -372,5 +379,14 @@ final class CmsLocaleCatalogTest extends TestCase
         return $literal[0] === "'"
             ? str_replace(["\\'", '\\\\'], ["'", '\\'], $body)
             : stripcslashes($body);
+    }
+
+    /** A source the gate cannot read fails it: a file it cannot open is not one it can clear. */
+    private static function read(string $path): string
+    {
+        $source = @file_get_contents($path);
+        self::assertIsString($source, "{$path} could not be read");
+
+        return $source;
     }
 }

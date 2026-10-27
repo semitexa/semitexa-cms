@@ -87,6 +87,17 @@ final class ContentBlockCodecTest extends TestCase
         self::assertSame($broken, $blocks[0]->payload);
     }
 
+    /** Only the opening the encoder writes marks a broken value as a document: HTML that mentions the format is content. */
+    #[Test]
+    public function aTruncatedDocumentIsStillADocumentAndHtmlNamingTheFormatIsNot(): void
+    {
+        self::assertTrue($this->codec->isUnreadableDocument('{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payl'));
+        self::assertTrue($this->codec->isUnreadableDocument(' { "format" : "semitexa.cms.blocks/v1", "blo'));
+        self::assertFalse($this->codec->isMarkedDocument('{<p>semitexa.cms.blocks/v1</p>'));
+        self::assertFalse($this->codec->isMarkedDocument('{"title":"x","format":"semitexa.cms.blocks/v1"'));
+        self::assertFalse($this->codec->isMarkedDocument('<p>{"format":"semitexa.cms.blocks/v1"</p>'));
+    }
+
     #[Test]
     public function aValueThatClaimsTheFormatWithNoReadableBlockKeepsItsText(): void
     {

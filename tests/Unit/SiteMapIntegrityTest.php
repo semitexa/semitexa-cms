@@ -76,6 +76,11 @@ final class SiteMapIntegrityTest extends TestCase
             'regmus',
         );
 
+        $verdicts = [];
+        foreach ($checks as $check) {
+            $verdicts[$check->ref] = $check->verdict->value;
+        }
+        self::assertSame(['regmus:page:1' => 'reachable', 'regmus:page:2' => 'reachable'], $verdicts, 'both pages were checked');
         self::assertSame([], $this->integrity->problems($checks));
     }
 

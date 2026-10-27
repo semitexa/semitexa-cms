@@ -98,6 +98,23 @@ final class ContentBlockRendererTest extends TestCase
         self::assertStringContainsString('&quot;&gt;', $html);
     }
 
+    /**
+     * Only an unreadable document is held back. A passage whose words are a
+     * readable blocks document is the author's text, and was dropped.
+     */
+    #[Test]
+    public function aPassageThatReadsAsADocumentIsStillPrinted(): void
+    {
+        $words = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payload":"a"}]}';
+        $unreadable = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"video","payload":"x"}]}';
+
+        self::assertSame(
+            '{&#34;format&#34;:&#34;semitexa.cms.blocks/v1&#34;,&#34;blocks&#34;:[{&#34;kind&#34;:&#34;text&#34;,&#34;payload&#34;:&#34;a&#34;}]}',
+            $this->renderer->render([ContentBlock::text($words)]),
+        );
+        self::assertSame('', $this->renderer->render([ContentBlock::text($unreadable)]));
+    }
+
     #[Test]
     public function anEmptyPassageIsNotAGapOnThePage(): void
     {
