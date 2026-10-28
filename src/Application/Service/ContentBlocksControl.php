@@ -59,7 +59,7 @@ final class ContentBlocksControl
         // than decoration. The parts used to be siblings, so an add button had
         // no element that meant "my field": the client fell back to the first
         // `[data-blocks]` in the DOCUMENT, and on a page declaring two blocks
-        // fields every «+ Текст» wrote into the first one. The same wrapper
+        // fields every «+ Text» wrote into the first one. The same wrapper
         // scopes the <template> lookup, which had the same reach.
         return '<div class="blocks-field">'
             . '<input id="' . $id . '" type="hidden" name="' . $escapedName . '"'
@@ -67,8 +67,10 @@ final class ContentBlocksControl
             . '<div class="blocks" data-blocks="' . $id . '">' . $blocks . '</div>'
             . $this->templates($id, $picker)
             . '<div class="blocks__add">'
-            . '<button type="button" class="ghost" data-block-add="text">+ Текст</button>'
-            . '<button type="button" class="ghost" data-block-add="image">+ Зображення</button>'
+            . '<button type="button" class="ghost" data-block-add="text">'
+            . CmsText::html('blocks.add_text', [], '+ Text') . '</button>'
+            . '<button type="button" class="ghost" data-block-add="image">'
+            . CmsText::html('blocks.add_image', [], '+ Image') . '</button>'
             . '</div>'
             . '</div>';
     }
@@ -113,22 +115,42 @@ final class ContentBlocksControl
             ? '<input id="' . $blockId . '-v" type="hidden" value="' . $this->escape($block->payload) . '">'
                 . '<trix-editor input="' . $blockId . '-v" class="rich"></trix-editor>'
             : $picker($block->payload)
-                . '<label class="block__alt"><span>Опис для тих, хто не бачить зображення</span>'
+                . '<label class="block__alt"><span>'
+                . CmsText::html('blocks.alt', [], 'Description for people who cannot see the image') . '</span>'
                 . '<input type="text" data-block-alt value="' . $this->escape($block->alt) . '"></label>';
 
         return '<article class="block" data-block data-block-kind="' . $this->escape($block->kind) . '">'
             . '<div class="block__body">' . $body . '</div>'
             . '<div class="block__bar">'
-            . $this->layoutSelect('data-block-align', 'Розташування', BlockLayout::ALIGNMENTS, $block->layout->align, [
-                'left' => 'Ліворуч', 'center' => 'По центру', 'right' => 'Праворуч',
-            ])
-            . $this->layoutSelect('data-block-size', 'Розмір', BlockLayout::SIZES, $block->layout->size, [
-                'small' => 'Малий', 'medium' => 'Середній', 'full' => 'На всю ширину',
-            ])
+            . $this->layoutSelect(
+                'data-block-align',
+                CmsText::t('blocks.align', [], 'Alignment'),
+                BlockLayout::ALIGNMENTS,
+                $block->layout->align,
+                [
+                    'left' => CmsText::t('blocks.align.left', [], 'Left'),
+                    'center' => CmsText::t('blocks.align.center', [], 'Center'),
+                    'right' => CmsText::t('blocks.align.right', [], 'Right'),
+                ],
+            )
+            . $this->layoutSelect(
+                'data-block-size',
+                CmsText::t('blocks.size', [], 'Size'),
+                BlockLayout::SIZES,
+                $block->layout->size,
+                [
+                    'small' => CmsText::t('blocks.size.small', [], 'Small'),
+                    'medium' => CmsText::t('blocks.size.medium', [], 'Medium'),
+                    'full' => CmsText::t('blocks.size.full', [], 'Full width'),
+                ],
+            )
             . '<span class="block__acts">'
-            . '<button type="button" class="ghost" data-block-move="up" aria-label="Вище">↑</button>'
-            . '<button type="button" class="ghost" data-block-move="down" aria-label="Нижче">↓</button>'
-            . '<button type="button" class="ghost" data-block-remove aria-label="Прибрати блок">×</button>'
+            . '<button type="button" class="ghost" data-block-move="up" aria-label="'
+            . CmsText::html('blocks.move_up', [], 'Move up') . '">↑</button>'
+            . '<button type="button" class="ghost" data-block-move="down" aria-label="'
+            . CmsText::html('blocks.move_down', [], 'Move down') . '">↓</button>'
+            . '<button type="button" class="ghost" data-block-remove aria-label="'
+            . CmsText::html('blocks.remove', [], 'Remove block') . '">×</button>'
             . '</span></div></article>';
     }
 

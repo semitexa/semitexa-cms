@@ -46,7 +46,7 @@ final class ContentBlockRendererTest extends TestCase
             ContentBlock::text('<div>Центр</div>', BlockLayout::of('center', null)),
         ]);
 
-        self::assertSame('<div data-align="center" data-size="full"><div>Центр</div></div>', $html);
+        self::assertSame('<div class="cms-block" data-align="center" data-size="full"><div>Центр</div></div>', $html);
     }
 
     #[Test]
@@ -60,7 +60,10 @@ final class ContentBlockRendererTest extends TestCase
         ]);
 
         self::assertStringNotContainsString('style=', $html);
-        self::assertStringNotContainsString('class=', $html);
+        // One fixed marker a stylesheet aims at, the same on every block; no
+        // class that names an appearance (`float-right`, `w-50`).
+        self::assertSame(1, preg_match_all('/class="([^"]*)"/', $html, $classes));
+        self::assertSame(['cms-block'], $classes[1]);
         self::assertStringContainsString('data-align="right"', $html);
     }
 
@@ -73,7 +76,7 @@ final class ContentBlockRendererTest extends TestCase
 
         self::assertStringContainsString('src="/os/app/cms/media/asset%2042%2Fx"', $html);
         self::assertStringContainsString('alt="Фасад музею"', $html);
-        self::assertStringContainsString('<figure data-align="center" data-size="medium">', $html);
+        self::assertStringContainsString('<figure class="cms-block" data-align="center" data-size="medium">', $html);
     }
 
     #[Test]
@@ -93,6 +96,23 @@ final class ContentBlockRendererTest extends TestCase
 
         self::assertStringNotContainsString('<script>', $html);
         self::assertStringContainsString('&quot;&gt;', $html);
+    }
+
+    /**
+     * Only an unreadable document is held back. A passage whose words are a
+     * readable blocks document is the author's text, and was dropped.
+     */
+    #[Test]
+    public function aPassageThatReadsAsADocumentIsStillPrinted(): void
+    {
+        $words = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payload":"a"}]}';
+        $unreadable = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"video","payload":"x"}]}';
+
+        self::assertSame(
+            '{&#34;format&#34;:&#34;semitexa.cms.blocks/v1&#34;,&#34;blocks&#34;:[{&#34;kind&#34;:&#34;text&#34;,&#34;payload&#34;:&#34;a&#34;}]}',
+            $this->renderer->render([ContentBlock::text($words)]),
+        );
+        self::assertSame('', $this->renderer->render([ContentBlock::text($unreadable)]));
     }
 
     #[Test]

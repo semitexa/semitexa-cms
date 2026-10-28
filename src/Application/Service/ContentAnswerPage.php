@@ -39,8 +39,8 @@ final class ContentAnswerPage
     public function renderMissing(string $ref): string
     {
         return $this->emptyState(
-            'Немає чого відкрити для «' . $this->escape($ref) . '».',
-            'Можливо, запис видалено — оновіть карту.',
+            CmsText::html('answer.missing.headline', ['ref' => $ref], 'Nothing to open for “{{ref}}”.'),
+            CmsText::html('answer.missing.hint', [], 'The record may have been deleted — refresh the map.'),
         );
     }
 
@@ -56,8 +56,13 @@ final class ContentAnswerPage
     public function renderNothingChosen(): string
     {
         return $this->emptyState(
-            'Оберіть, що відкрити.',
-            'Ця консоль показує сторінки і списки з карти сайту. Її ще не побудовано — <code>cms:map:build</code>.',
+            CmsText::html('answer.nothing_chosen.headline', [], 'Choose what to open.'),
+            CmsText::html(
+                'answer.nothing_chosen.hint',
+                [],
+                'This console shows the pages and lists of the site map. The map has not been built yet — {{command}}.',
+                ['command' => '<code>cms:map:build</code>'],
+            ),
         );
     }
 
@@ -73,8 +78,8 @@ final class ContentAnswerPage
     public function renderNameNotFound(string $name): string
     {
         return $this->emptyState(
-            'Не знайшов нічого з назвою «' . $this->escape($name) . '».',
-            'Попросіть перелік вмісту, щоб побачити, що тут є.',
+            CmsText::html('answer.name_not_found.headline', ['name' => $name], 'Found nothing called “{{name}}”.'),
+            CmsText::html('answer.name_not_found.hint', [], 'Ask for a list of the content to see what is here.'),
         );
     }
 
@@ -82,8 +87,12 @@ final class ContentAnswerPage
     public function renderCannotCreate(string $ref): string
     {
         return $this->emptyState(
-            'Тут не можна створити запис.',
-            'Список «' . $this->escape($ref) . '» показує записи, які веде інший модуль.',
+            CmsText::html('answer.cannot_create.headline', [], 'A record cannot be created here.'),
+            CmsText::html(
+                'answer.cannot_create.hint',
+                ['ref' => $ref],
+                'The list “{{ref}}” shows records that another module maintains.',
+            ),
         );
     }
 
@@ -91,12 +100,12 @@ final class ContentAnswerPage
      * The module refused, or created something nothing can open.
      *
      * The module's own message is shown rather than swallowed: it is the only
-     * party that knows why, and an author told "не вдалося" learns nothing.
+     * party that knows why, and an author told "it failed" learns nothing.
      */
     public function renderCreateFailed(string $ref, string $why): string
     {
         return $this->emptyState(
-            'Не вдалося створити запис у «' . $this->escape($ref) . '».',
+            CmsText::html('answer.create_failed.headline', ['ref' => $ref], 'Could not create a record in “{{ref}}”.'),
             $this->escape($why),
         );
     }
@@ -105,7 +114,7 @@ final class ContentAnswerPage
     public function renderCannotRemove(string $ref, string $why): string
     {
         return $this->emptyState(
-            'Не можу прибрати «' . $this->escape($ref) . '».',
+            CmsText::html('answer.cannot_remove.headline', ['ref' => $ref], 'Cannot remove “{{ref}}”.'),
             $this->escape($why),
         );
     }
@@ -122,6 +131,15 @@ final class ContentAnswerPage
      */
     public function renderConfirmRemoval(string $ref, string $title, string $collectionRef, string $csrfToken): string
     {
+        $question = CmsText::html('remove.confirm.title', ['title' => $title], 'Remove “{{title}}”?');
+        $explain = CmsText::html(
+            'remove.confirm.body',
+            [],
+            'The record will disappear from the site. What happens to it is up to the module that maintains it — it may keep its own copy.',
+        );
+        $cancel = CmsText::html('remove.cancel', [], 'Cancel');
+        $confirm = CmsText::html('remove.submit', [], 'Remove');
+        $lang = CmsText::language();
         $title = $this->escape($title);
         $ref = $this->escape($ref);
         $collectionRef = $this->escape($collectionRef);
@@ -130,7 +148,7 @@ final class ContentAnswerPage
 
         return <<<HTML
 <!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="{$lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{$title}</title>
 <style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0f172a;color:#a8b4cc;
 font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;padding:24px}
@@ -140,16 +158,16 @@ button,a.btn{font:inherit;font-size:13px;padding:7px 14px;border-radius:6px;curs
   border:1px solid rgba(148,163,184,.35);background:transparent;color:#e2e8f0}
 button{border-color:rgba(248,113,113,.5);color:#fca5a5}</style></head>
 <body><div class="card">
-<h1>Прибрати «{$title}»?</h1>
-<p>Запис зникне з сайту. Це рішення модуля, який його веде — він може лишити копію в себе.</p>
+<h1>{$question}</h1>
+<p>{$explain}</p>
 <div class="row">
-<a class="btn" href="{$back}">Скасувати</a>
+<a class="btn" href="{$back}">{$cancel}</a>
 <form method="post" action="/os/app/cms/delete">
 <input type="hidden" name="ref" value="{$ref}">
 <input type="hidden" name="collection" value="{$collectionRef}">
 <input type="hidden" name="confirm" value="1">
 <input type="hidden" name="_csrf" value="{$csrfToken}">
-<button type="submit">Прибрати</button>
+<button type="submit">{$confirm}</button>
 </form>
 </div></div></body></html>
 HTML;
@@ -181,9 +199,11 @@ HTML;
             $create = '<form class="new" method="post" action="/os/app/cms/create">'
                 . '<input type="hidden" name="ref" value="' . $this->escape($ref) . '">'
                 . '<input type="hidden" name="_csrf" value="' . $this->escape($csrfToken) . '">'
-                . '<button type="submit">+ Новий запис</button></form>';
+                . '<button type="submit">' . CmsText::html('rows.new', [], '+ New record') . '</button></form>';
         }
 
+        $removeTitle = CmsText::html('rows.remove_title', [], 'Remove from the site');
+        $untitled = CmsText::t('rows.untitled', [], 'Untitled');
         $items = '';
         foreach ($rows->rows as $row) {
             $meta = $row->meta === [] ? '' : '<span class="meta">' . $this->escape(implode(' · ', $row->meta)) . '</span>';
@@ -195,42 +215,47 @@ HTML;
                     . '<input type="hidden" name="ref" value="' . $this->escape($row->ref) . '">'
                     . '<input type="hidden" name="collection" value="' . $this->escape($ref) . '">'
                     . '<input type="hidden" name="_csrf" value="' . $this->escape($csrfToken) . '">'
-                    . '<button type="submit" title="Прибрати з сайту">×</button></form>';
+                    . '<button type="submit" title="' . $removeTitle . '">×</button></form>';
             }
 
             $items .= '<div class="row-wrap">'
                 . '<a class="row" href="/os/app/cms?ref=' . rawurlencode($row->ref) . '">'
-                . '<span class="row__title">' . $this->escape($row->title !== '' ? $row->title : 'Без назви') . '</span>'
+                . '<span class="row__title">' . $this->escape($row->title !== '' ? $row->title : $untitled) . '</span>'
                 . $meta . '</a>' . $remove . '</div>';
         }
 
         if ($items === '') {
-            // Empty and past-the-end are different facts. Saying "порожньо"
+            // Empty and past-the-end are different facts. Saying "empty"
             // about a collection that holds forty records is the console
             // stating something false about the site — the same conflation
             // fixed in the chat listing, still standing here.
             $items = $rows->total > 0
-                ? '<p class="empty">На цій сторінці нічого немає. '
-                    . '<a href="/os/app/cms?ref=' . rawurlencode($ref) . '&page=1">До першої сторінки</a></p>'
-                : '<p class="empty">Тут поки порожньо.</p>';
+                ? '<p class="empty">' . CmsText::html('rows.page_empty', [], 'Nothing on this page.') . ' '
+                    . '<a href="/os/app/cms?ref=' . rawurlencode($ref) . '&page=1">'
+                    . CmsText::html('rows.first_page', [], 'Go to the first page') . '</a></p>'
+                : '<p class="empty">' . CmsText::html('rows.empty', [], 'Nothing here yet.') . '</p>';
         }
 
         $pager = '';
         if ($rows->pages() > 1) {
             $base = '/os/app/cms?ref=' . rawurlencode($ref) . '&page=';
+            $back = CmsText::html('rows.previous', [], '← Previous');
+            $forward = CmsText::html('rows.next', [], 'Next →');
             $prev = $rows->hasPrevious()
-                ? '<a class="page" href="' . $base . ($rows->page - 1) . '">← Назад</a>'
-                : '<span class="page page--off">← Назад</span>';
+                ? '<a class="page" href="' . $base . ($rows->page - 1) . '">' . $back . '</a>'
+                : '<span class="page page--off">' . $back . '</span>';
             $next = $rows->hasNext()
-                ? '<a class="page" href="' . $base . ($rows->page + 1) . '">Далі →</a>'
-                : '<span class="page page--off">Далі →</span>';
+                ? '<a class="page" href="' . $base . ($rows->page + 1) . '">' . $forward . '</a>'
+                : '<span class="page page--off">' . $forward . '</span>';
             $pager = '<div class="pager">' . $prev
                 . '<span class="page-of">' . $rows->page . ' / ' . $rows->pages() . '</span>' . $next . '</div>';
         }
 
+        $lang = CmsText::language();
+
         return <<<HTML
 <!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="{$lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{$title}</title>
 <style>
   *{box-sizing:border-box} html,body{margin:0;height:100%}
@@ -271,18 +296,14 @@ HTML;
 HTML;
     }
 
-
-
-
-
-
-
-
+    /** Both arguments are HTML already: each caller escapes what it puts in. */
     private function emptyState(string $headline, string $hint): string
     {
+        $lang = CmsText::language();
+
         return <<<HTML
 <!DOCTYPE html>
-<html lang="uk"><head><meta charset="UTF-8"><title>—</title>
+<html lang="{$lang}"><head><meta charset="UTF-8"><title>—</title>
 <style>body{margin:0;display:grid;place-items:center;height:100vh;background:#0f172a;color:#a8b4cc;
 font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;text-align:center;padding:24px}
 code{background:#1e293b;padding:1px 5px;border-radius:3px;color:#cbd5e1}</style></head>

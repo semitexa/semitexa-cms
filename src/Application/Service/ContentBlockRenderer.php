@@ -10,25 +10,39 @@ use Semitexa\Cms\Domain\Model\ContentBlock;
  * A page's blocks, as the markup a visitor gets.
  *
  * The layout an author chose arrives here as NAMES — center, medium — and
- * leaves as data attributes for the skin to style. That is the whole reason
+ * leaves as data attributes for the skin to style — on a `cms-block` element,
+ * so a stylesheet can aim at blocks and nothing else that carries the same
+ * attribute names. `css/content-blocks.css` is the default the skin overrides;
+ * cms_blocks() in a template requires it. That is the whole reason
  * layout lives on the block: the skin decides what "center" looks like, a skin
  * swap keeps it meaning the same thing, and nothing about appearance is stored
  * with the words.
  *
  * A DEFAULT BLOCK RENDERS AS ITS PAYLOAD AND NOTHING ELSE, and that property is
  * load-bearing rather than tidy: every page written before this format decodes
- * to one default text block, so a migrated page renders byte-for-byte what it
- * rendered before. A migration nobody can see is the only kind worth running on
- * somebody's live site.
+ * to one default text block, so a migrated page renders what it rendered
+ * before — no wrapper, no layout — apart from what the display sanitiser
+ * takes out (scripts, handlers, styles). A migration nobody can see is the
+ * only kind worth running on somebody's live site.
  *
  * An image is rendered from its asset ID through the console's media route,
  * never from a stored URL — {@see \Semitexa\Cms\Domain\Model\ContentField::IMAGE}
  * states why: a URL beside the id is a second copy of a fact the media service
  * owns, and moving the storage would invalidate every page that cached one.
+ *
+ * Text is sanitised HERE, at the last step before the visitor, not trusted
+ * from the save: rows saved by a release whose sanitiser could be skipped,
+ * imports, seeds, a module's own admin and direct writes never passed
+ * through it, and cms_blocks() prints its answer as markup.
  */
 final class ContentBlockRenderer
 {
     private const MEDIA_ROUTE = '/os/app/cms/media/';
+
+    /** @param ContentHtmlSanitizer|null $sanitizer the container's; a bare one otherwise */
+    public function __construct(private ?ContentHtmlSanitizer $sanitizer = null)
+    {
+    }
 
     /** @param list<ContentBlock> $blocks */
     public function render(array $blocks): string
@@ -42,6 +56,16 @@ final class ContentBlockRenderer
             if ($block->isEmpty() && $block->isText()) {
                 continue;
             }
+            // A blocks document this version cannot read comes back as one
+            // text block holding the whole document. It is kept for a newer
+            // editor, never sanitised, so it is never printed: a page with
+            // nothing on it beats one that runs what an unknown block held.
+            // Asked of the document, not of any passage that looks like one:
+            // a text block whose words are a readable blocks document is
+            // the author's text and prints like any other.
+            if ($block->isText() && (new ContentBlockCodec())->isUnreadableDocument($block->payload)) {
+                continue;
+            }
 
             $html .= $block->isText() ? $this->text($block) : $this->image($block);
         }
@@ -51,10 +75,13 @@ final class ContentBlockRenderer
 
     private function text(ContentBlock $block): string
     {
-        // Byte-identical to the old single-field page when nothing was chosen.
+        $this->sanitizer ??= new ContentHtmlSanitizer();
+        $payload = $this->sanitizer->forDisplay($block->payload);
+
+        // The old single-field page, sanitised, when nothing was chosen.
         return $block->layout->isDefault()
-            ? $block->payload
-            : '<div' . $block->layout->attributes() . '>' . $block->payload . '</div>';
+            ? $payload
+            : '<div class="cms-block"' . $block->layout->attributes() . '>' . $payload . '</div>';
     }
 
     private function image(ContentBlock $block): string
@@ -66,7 +93,7 @@ final class ContentBlockRenderer
         // alt is always emitted, empty included: an empty alt says "decorative"
         // to a screen reader, while a missing one says "guess", and the guess is
         // the file name.
-        return '<figure' . $block->layout->attributes() . '>'
+        return '<figure class="cms-block"' . $block->layout->attributes() . '>'
             . '<img src="' . self::MEDIA_ROUTE . rawurlencode($block->payload) . '"'
             . ' alt="' . htmlspecialchars($block->alt, ENT_QUOTES, 'UTF-8') . '">'
             . '</figure>';

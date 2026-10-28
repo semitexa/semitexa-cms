@@ -1,0 +1,40 @@
+/*
+ * What a CMS page's block layout looks like until a skin says otherwise.
+ * The author chose a position and a size by NAME (data-align, data-size).
+ * Every rule sits inside :where(), so it weighs nothing: any rule of the
+ * skin's own about .cms-block wins, wherever this sheet lands in the head.
+ * Required by cms_blocks(), or by asset_require('cms:css:content-blocks').
+ * Floats spill past their container: print the blocks inside an element with
+ * display: flow-root (or any other new formatting context).
+ */
+:where(.cms-block) {
+    box-sizing: border-box;
+    margin-block: 1em;
+    margin-inline: 0;
+}
+
+:where(.cms-block) img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+:where(.cms-block[data-size="small"]) { max-width: min(100%, 20rem); }
+:where(.cms-block[data-size="medium"]) { max-width: min(100%, 36rem); }
+:where(.cms-block[data-size="full"]) { max-width: 100%; clear: both; }
+
+:where(.cms-block[data-align="center"]) { margin-inline: auto; clear: both; }
+:where(.cms-block[data-align="right"]) { margin-inline-start: auto; }
+
+/* Beside the text only where there is room for both. */
+@media (min-width: 40rem) {
+    :where(.cms-block[data-align="left"]:not([data-size="full"])) {
+        float: left;
+        margin-inline: 0 1.5em;
+    }
+
+    :where(.cms-block[data-align="right"]:not([data-size="full"])) {
+        float: right;
+        margin-inline: 1.5em 0;
+    }
+}

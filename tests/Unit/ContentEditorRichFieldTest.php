@@ -49,7 +49,7 @@ final class ContentEditorRichFieldTest extends TestCase
     {
         $html = $this->render([ContentField::html('body', 'Текст', '<p>Hi</p>')]);
 
-        self::assertStringContainsString('Колір і шрифт бере оформлення сайту', $html);
+        self::assertStringContainsString('Color and font come from the design of the site', $html);
     }
 
     #[Test]
@@ -59,7 +59,7 @@ final class ContentEditorRichFieldTest extends TestCase
         // edited entirely through lines and dates has nothing to explain.
         $html = $this->render([ContentField::line('title', 'Назва', 'Hi')]);
 
-        self::assertStringNotContainsString('оформлення сайту', $html);
+        self::assertStringNotContainsString('design of the site', $html);
     }
 
     /**

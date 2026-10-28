@@ -157,4 +157,54 @@ final class BlocksGoThroughTheAllowlistTest extends TestCase
 
         self::assertSame('', $clean->values['body']);
     }
+
+    /**
+     * Review 2026-10-21: HTML that merely MENTIONS the format was taken for an
+     * unreadable document, kept untouched, and printed as markup by
+     * cms_blocks() — a script on the public site from anyone who can save.
+     */
+    #[Test]
+    public function htmlThatMentionsTheFormatIsStillCleaned(): void
+    {
+        $clean = $this->sanitizer->sanitizeValues(
+            ['body' => '<img src=x onerror=alert(1)>semitexa.cms.blocks/v1'],
+            [],
+            ['body'],
+        );
+
+        self::assertStringNotContainsString('onerror', $clean->values['body']);
+        $blocks = (new ContentBlockCodec())->decode($clean->values['body']);
+        self::assertCount(1, $blocks);
+        self::assertSame('semitexa.cms.blocks/v1', $blocks[0]->payload, 'cleaned, and the words kept');
+    }
+
+    /**
+     * A document cut short no longer parses, but still opens with the format's
+     * declaration: read as text, the save HTML-escaped its quotes and stored a
+     * fresh document over the original bytes.
+     */
+    #[Test]
+    public function aTruncatedDocumentIsKeptByteForByte(): void
+    {
+        $truncated = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"text","payl';
+
+        $clean = $this->sanitizer->sanitizeValues(['body' => $truncated], [], ['body']);
+
+        self::assertSame($truncated, $clean->values['body']);
+        self::assertSame('', (string) (new \Semitexa\Cms\Application\Service\Twig\ContentBlocksTwigExtension())->render($truncated), 'kept, never printed');
+    }
+
+    /** A document of a newer version is kept for its editor — and never printed as markup. */
+    #[Test]
+    public function anUnreadableDocumentIsKeptButNeverRendered(): void
+    {
+        $future = '{"format":"semitexa.cms.blocks/v1","blocks":[{"kind":"video","payload":"x"},{"kind":"text","payload":"<script>alert(2)</script>"}]}';
+
+        $clean = $this->sanitizer->sanitizeValues(['body' => $future], [], ['body']);
+        self::assertSame($future, $clean->values['body'], 'kept as it was, for the editor that wrote it');
+
+        $html = (string) (new \Semitexa\Cms\Application\Service\Twig\ContentBlocksTwigExtension())->render($clean->values['body']);
+        self::assertStringNotContainsString('<script', $html);
+        self::assertSame('', $html);
+    }
 }

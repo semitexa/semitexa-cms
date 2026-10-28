@@ -30,6 +30,12 @@ interface ContentTranslatorInterface
     /**
      * Bring every other language up to date with the current text.
      *
+     * What a model writes is untrusted markup: the author's text was
+     * sanitised, but it can still ask the model to add a script, and the CMS
+     * never sees the overlay. Prefer ContentOverlayTranslatorInterface, where
+     * the CMS sanitises what the model returns; here, run every HTML value
+     * through ContentHtmlSanitizer::sanitize() before storing it.
+     *
      * @throws \RuntimeException when the work could not be done and is worth retrying
      */
     public function translate(string $ref): void;

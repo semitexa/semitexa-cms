@@ -172,6 +172,7 @@ final readonly class ContentSeo
     {
         $authored = $this->authored;
         $next = [];
+        $released = false;
 
         foreach (self::GENERATED_FIELDS as $field) {
             if (!array_key_exists($field, $values)) {
@@ -180,6 +181,7 @@ final readonly class ContentSeo
             }
             $value = trim($values[$field]);
             $next[$field] = $value;
+            $released = $released || ($value === '' && in_array($field, $this->authored, true));
             $authored = array_values(array_diff($authored, [$field]));
             if ($value !== '') {
                 $authored[] = $field;
@@ -199,8 +201,22 @@ final readonly class ContentSeo
             canonical: array_key_exists('canonical', $values) ? trim($values['canonical']) : $this->canonical,
             robots: array_key_exists('robots', $values) ? trim($values['robots']) : $this->robots,
             authored: $authored,
-            sourceHash: $this->sourceHash,
+            // A released field is owed a generated value; forgetting the hash
+            // makes the save that follows queue the page even when its text
+            // did not change.
+            sourceHash: $released ? '' : $this->sourceHash,
         );
+    }
+
+    /**
+     * True when this record was settled against exactly this text, so a drain
+     * owes it nothing. Not the same as !isStale(): a record a person filled
+     * that was never generated has no hash, is never stale, and still owes
+     * the fields nobody typed.
+     */
+    public function describes(string $currentHash): bool
+    {
+        return $this->sourceHash !== '' && $this->sourceHash === $currentHash;
     }
 
     /** True when the content has moved on since the meta was generated. */

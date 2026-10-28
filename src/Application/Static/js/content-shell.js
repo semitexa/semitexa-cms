@@ -2,10 +2,23 @@
 // settings without losing sight of the text.
 //
 // Everything here is an enhancement over a form that already works. With this
-// file blocked the page is still a title, a body and a Зберегти button — which
+// file blocked the page is still a title, a body and a Save button — which
 // is why nothing below is required for a save to happen.
 (function () {
   'use strict';
+
+  // The page's own words, resolved by the server into the inert JSON block
+  // CmsText::scriptStrings() writes. Every call keeps its English: a page
+  // rendered without the block still says something a person can read.
+  var STR = (function () {
+    var node = document.getElementById('cms-strings');
+    if (!node) { return {}; }
+    try {
+      var parsed = JSON.parse(node.textContent || '{}');
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) { return {}; }
+  }());
+  function t(key, fallback) { return typeof STR[key] === 'string' ? STR[key] : fallback; }
 
   var form = document.querySelector('form[data-editor]');
   if (!form) { return; }
@@ -21,9 +34,9 @@
   function setState(next) {
     if (!state) { return; }
     state.dataset.state = next;
-    state.textContent = next === 'dirty' ? 'Незбережені зміни'
-      : next === 'saving' ? 'Зберігаю…'
-      : 'Збережено';
+    state.textContent = next === 'dirty' ? t('state.dirty', 'Unsaved changes')
+      : next === 'saving' ? t('state.saving', 'Saving…')
+      : t('state.saved', 'Saved');
   }
 
   function markDirty() {
@@ -135,7 +148,7 @@
     // The label is the only affordance when there is nothing yet, so it has to
     // say which of the two things it does.
     var pickText = pick ? pick.querySelector('span') : null;
-    if (pickText) { pickText.textContent = has ? 'Замінити' : 'Вибрати зображення'; }
+    if (pickText) { pickText.textContent = has ? t('image.replace', 'Replace') : t('image.choose', 'Choose image'); }
     markDirty();
   }
 
@@ -161,7 +174,7 @@
     // Checked here so an obvious mistake costs nothing; the ingest checks the
     // BYTES, which is the check that decides.
     if (ACCEPTED.indexOf(file.type) === -1) {
-      coverFail(cover, 'Можна додавати лише зображення: JPEG, PNG або WebP.');
+      coverFail(cover, t('image.only_images', 'Only images can be added: JPEG, PNG or WebP.'));
       return;
     }
 
@@ -181,14 +194,14 @@
         if (!result.ok || !result.body || !result.body.assetId) {
           // The server says which collection refused it and why — wrong format,
           // too large, over quota — and the author is standing there waiting.
-          coverFail(cover, (result.body && result.body.error) || 'Не вдалося зберегти зображення.');
+          coverFail(cover, (result.body && result.body.error) || t('image.save_failed', 'Could not save the image.'));
           return;
         }
         coverShow(cover, result.body.assetId, result.body.url);
       })
       .catch(function () {
         if (generation !== cover.__coverGeneration) { return; }
-        coverFail(cover, 'Не вдалося зберегти зображення.');
+        coverFail(cover, t('image.save_failed', 'Could not save the image.'));
       })
       .then(function () {
         coverPending -= 1;

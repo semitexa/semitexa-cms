@@ -67,7 +67,9 @@ final class SeoWriterTest extends TestCase
             self::fail('the model must not be called when there is nothing to generate');
         });
 
-        self::assertSame($seo, $writer->write($seo, $this->draft(), 'hash-1'));
+        $written = $writer->write($seo, $this->draft(), 'hash-1');
+        self::assertSame('ours', $written->description);
+        self::assertSame('hash-1', $written->sourceHash, 'looked at, so settled: an old hash kept the page due forever');
     }
 
     #[Test]
@@ -79,7 +81,26 @@ final class SeoWriterTest extends TestCase
             self::fail('a model asked to describe nothing will invent something');
         });
 
-        self::assertTrue($writer->write(new ContentSeo(ref: 'page:about'), $empty, 'h')->isEmpty());
+        $written = $writer->write(new ContentSeo(ref: 'page:about'), $empty, 'h');
+        self::assertTrue($written->isEmpty());
+        self::assertSame('h', $written->sourceHash);
+    }
+
+    /** Emptied, a page keeps no description of the words it no longer has; what a person wrote stays. */
+    #[Test]
+    public function emptying_a_page_clears_what_was_generated_for_it(): void
+    {
+        $empty = new ContentDraft(ref: 'page:about', title: 'About', fields: []);
+        $seo = new ContentSeo(ref: 'page:about', title: 'About us', description: 'Old words.', ogTitle: 'Old title.', ogDescription: 'Old words.', jsonLd: '{"@type":"WebPage"}', authored: ['title'], sourceHash: 'old');
+
+        $written = $this->writer('{}', function (): void {
+            self::fail('a model asked to describe nothing will invent something');
+        })->write($seo, $empty, 'h');
+
+        self::assertSame(
+            ['About us', '', '', '', '', 'h'],
+            [$written->title, $written->description, $written->ogTitle, $written->ogDescription, $written->jsonLd, $written->sourceHash],
+        );
     }
 
     /**

@@ -73,6 +73,18 @@ final class ContentSaveReportingTest extends TestCase
         self::assertSame('Зображення вилучено. Метадані — ні.', $warning);
     }
 
+    /** A name the record did not declare is not known to be markup: it is not handed to the module at all. */
+    #[Test]
+    public function only_the_declared_fields_reach_the_module(): void
+    {
+        $draft = new ContentDraft(ref: 'demo:article:x', title: 'Подія', fields: [ContentField::date('starts_on', 'Починається')]);
+
+        $values = (new ReflectionMethod(ContentSaveHandler::class, 'declaredValues'))
+            ->invoke(null, $draft, ['starts_on' => '2026-09-11', 'body_html' => '<img src=x onerror=alert(1)>']);
+
+        self::assertSame(['starts_on' => '2026-09-11'], $values);
+    }
+
     /**
      * The date is checked exactly as it will be stored.
      *

@@ -106,6 +106,23 @@ final class SiteMapProjectorTest extends TestCase
     }
 
     #[Test]
+    public function a_map_that_yields_its_site_writes_it_once_as_the_root(): void
+    {
+        // Written again as a place, the site took `opens: editor` over
+        // `opens: map` and an edge from itself to itself.
+        $report = $this->projector()->project($this->provider([
+            Place::site('regmus', 'Museum'),
+            Place::page('regmus:page:3', 'Контакти', 'regmus', 'regmus:page'),
+        ]));
+
+        self::assertSame(1, $report['places']);
+        self::assertSame(1, $report['edges']);
+        $sites = $this->store->nodesByKind(NodeKind::Site);
+        self::assertCount(1, $sites);
+        self::assertSame('map', $sites[0]->getProperties()['opens'] ?? null);
+    }
+
+    #[Test]
     public function rebuilding_after_the_content_changed_updates_rather_than_duplicates(): void
     {
         // The rebuild is the common case: new events arrive, someone re-runs it.

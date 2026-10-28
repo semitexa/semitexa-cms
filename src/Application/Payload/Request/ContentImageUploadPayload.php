@@ -10,6 +10,7 @@ use Semitexa\Core\Contract\ValidatablePayloadInterface;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Core\Http\UploadedFile;
 use Semitexa\Core\Request;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * One image dropped into an article body.
@@ -47,7 +48,7 @@ final class ContentImageUploadPayload implements ValidatablePayloadInterface, Os
         $file = $this->file();
 
         if ($file === null) {
-            return [self::FIELD => ['Не надіслано файл.']];
+            return [self::FIELD => [CmsText::t('image.no_file', [], 'No file was sent.')]];
         }
 
         if (!$file->isOk()) {

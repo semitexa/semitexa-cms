@@ -49,7 +49,7 @@ final class ContentHtmlSanitizer
      *
      * HtmlSanitizer defends itself against pathological input by TRUNCATING at
      * `maxInputLength` — 20 000 bytes by default — and saying nothing. An
-     * author writing a long article would have been told «Збережено.» while the
+     * author writing a long article would have been told «Saved.» while the
      * tail of their text was cut off mid-tag, and only found out by reopening
      * it. So the library's silent cut is turned off and a limit of our own is
      * enforced here, where going over is an answer the author can read.
@@ -60,6 +60,8 @@ final class ContentHtmlSanitizer
     private const MAX_BYTES = 200_000;
 
     private ?HtmlSanitizer $sanitizer = null;
+
+    private ?HtmlSanitizer $display = null;
 
     /**
      * Which image addresses survive. Lazily defaulted rather than required,
@@ -80,7 +82,7 @@ final class ContentHtmlSanitizer
      * because dropping one of those is the only removal here that loses
      * something an author would miss — everything else the allowlist strips
      * leaves its text behind. A save that quietly emptied an article of its
-     * pictures under «Збережено.» is the failure this reports on.
+     * pictures under «Saved.» is the failure this reports on.
      *
      * A BLOCKS field is cleaned the same way and block by block: its value is a
      * page the CMS owns, and the text inside each block is markup an author
@@ -175,6 +177,37 @@ final class ContentHtmlSanitizer
     }
 
     /**
+     * Markup as it may reach a visitor, whoever stored it: the safe elements
+     * a page is written in (paragraphs, headings, lists, tables, figures,
+     * links and images over http, https, mailto and tel, or relative), and
+     * no script, handler, frame, form, style, class, id or name. Media from
+     * any host passes: only the editor holds images to ContentImageSources. Wider than what the editor
+     * stores, on purpose: it guards the page, while the editor's allowlist
+     * shapes what an author writes, and a page written before the editor —
+     * in paragraphs — would otherwise print empty.
+     */
+    public function forDisplay(string $html): string
+    {
+        $this->display ??= new HtmlSanitizer((new HtmlSanitizerConfig())
+            ->allowSafeElements()
+            ->allowLinkSchemes(self::LINK_SCHEMES)
+            ->allowMediaSchemes(['http', 'https'])
+            ->allowRelativeLinks()
+            ->allowRelativeMedias()
+            // rel=opener with target=_blank hands the visitor's tab to the
+            // linked page (reverse tabnabbing).
+            ->forceAttribute('a', 'rel', 'noopener noreferrer')
+            // A stored id or name can clobber window globals and
+            // getElementById() for the page's own scripts.
+            ->dropAttribute('id', '*')
+            ->dropAttribute('name', '*')
+            // No silent cut: a long page prints whole (see MAX_BYTES).
+            ->withMaxInputLength(-1));
+
+        return $this->display->sanitize($html);
+    }
+
+    /**
      * The one size gate, shared by a rich document and a whole blocks field.
      *
      * @throws \InvalidArgumentException when the value is over {@see self::MAX_BYTES}
@@ -187,10 +220,10 @@ final class ContentHtmlSanitizer
 
         // Refused whole rather than stored in part: half an article saved
         // under a success message is worse than a save that did not happen.
-        throw new \InvalidArgumentException(sprintf(
-            'Текст завеликий: %d КБ, а можна щонайбільше %d КБ. Розділіть його на кілька записів.',
-            (int) ceil(strlen($value) / 1024),
-            (int) (self::MAX_BYTES / 1024),
+        throw new \InvalidArgumentException(CmsText::t(
+            'save.too_large',
+            ['size' => (int) ceil(strlen($value) / 1024), 'max' => (int) (self::MAX_BYTES / 1024)],
+            'The text is too large: {{size}} KB, and at most {{max}} KB is allowed. Split it into several records.',
         ));
     }
 
@@ -207,7 +240,7 @@ final class ContentHtmlSanitizer
         // media schemes, so Symfony strips the `src` of a `data:` image outright
         // — and what reaches dropForeignImages() is then an <img> with no src,
         // which that method deliberately passes over in silence. A pasted
-        // screenshot therefore vanished under «Збережено.» with nothing said,
+        // screenshot therefore vanished under «Saved.» with nothing said,
         // which is the exact failure this reporting exists to prevent.
         $this->noteRefusedSources($html, $refused);
 
@@ -382,9 +415,32 @@ final class ContentHtmlSanitizer
             ->allowElement('figure')
             ->allowElement('figcaption')
             ->allowElement('img', ['src', 'alt', 'width', 'height'])
-            // Text inside a dropped element is kept — losing an author's
-            // paragraph because it carried a stray tag would be its own kind of
-            // data loss, and the text was never the dangerous part.
+            // A paragraph: the editor writes divs, but a model's translation,
+            // an import and pasted markup write <p>, and every one of them was
+            // removed with its text.
+            ->allowElement('p')
+            // Text inside a container the content has no use for is kept —
+            // losing an author's paragraph because it carried a stray tag would
+            // be its own kind of data loss, and the text was never the
+            // dangerous part. Only these: an element not named anywhere is
+            // removed WITH its content (the library's default), which is what
+            // a script or a style must get.
+            ->blockElement('span')
+            ->blockElement('font')
+            ->blockElement('section')
+            ->blockElement('article')
+            ->blockElement('header')
+            ->blockElement('footer')
+            ->blockElement('main')
+            ->blockElement('h2')
+            ->blockElement('h3')
+            ->blockElement('h4')
+            ->blockElement('h5')
+            ->blockElement('h6')
+            ->blockElement('b')
+            ->blockElement('i')
+            ->blockElement('u')
+            ->blockElement('small')
             ->allowRelativeLinks()
             ->allowLinkSchemes(self::LINK_SCHEMES)
             // An image may be relative, or it may name a host over http(s) —

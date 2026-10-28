@@ -198,7 +198,7 @@ final class ContentEditorBlocksFieldTest extends TestCase
 
         self::assertStringContainsString('data-block-alt', $html);
         self::assertStringContainsString('value="Фасад музею"', $html);
-        self::assertStringContainsString('Опис для тих, хто не бачить зображення', $html);
+        self::assertStringContainsString('Description for people who cannot see the image', $html);
     }
 
     #[Test]
@@ -302,6 +302,6 @@ final class ContentEditorBlocksFieldTest extends TestCase
     {
         $html = $this->render('<div>Текст</div>');
 
-        self::assertStringContainsString('Колір і шрифт бере оформлення сайту', $html);
+        self::assertStringContainsString('Color and font come from the design of the site', $html);
     }
 }

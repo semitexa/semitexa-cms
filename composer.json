@@ -17,7 +17,7 @@
         "semitexa/authorization": "*",
         "semitexa/orm": "*",
         "semitexa/scheduler": "*",
-        "semitexa/os": "*",
+        "semitexa/os": ">=2026.09.10.0641 || dev-master",
         "semitexa/weave": "*",
         "semitexa/ssr": ">=2026.09.27.0404 || dev-master",
         "semitexa/media": "*",
@@ -44,7 +44,8 @@
         },
         "semitexa": {
             "floors": {
-                "semitexa/ssr": "2026.09.27.0404"
+                "semitexa/os": "2026.09.10.0641",
+                "semitexa/ssr": "next"
             }
         }
     },

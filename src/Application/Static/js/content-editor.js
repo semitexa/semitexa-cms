@@ -12,6 +12,19 @@
 (function () {
   'use strict';
 
+  // The page's own words, resolved by the server into the inert JSON block
+  // CmsText::scriptStrings() writes. Every call keeps its English: a page
+  // rendered without the block still says something a person can read.
+  var STR = (function () {
+    var node = document.getElementById('cms-strings');
+    if (!node) { return {}; }
+    try {
+      var parsed = JSON.parse(node.textContent || '{}');
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) { return {}; }
+  }());
+  function t(key, fallback) { return typeof STR[key] === 'string' ? STR[key] : fallback; }
+
   var UPLOAD_URL = '/os/app/cms/media';
   // Kept in step with ContentImageCollection deliberately. The server decides —
   // this only spares the author a round trip and a wait to be told no.
@@ -40,7 +53,7 @@
 
     if (ACCEPTED.indexOf(file.type) === -1) {
       event.preventDefault();
-      announce(event.target, 'Можна додавати лише зображення: JPEG, PNG або WebP.');
+      announce(event.target, t('image.only_images', 'Only images can be added: JPEG, PNG or WebP.'));
     }
   });
 
@@ -79,17 +92,17 @@
       }
 
       attachment.remove();
-      announce(editor, (body && body.error) || 'Не вдалося завантажити зображення.');
+      announce(editor, (body && body.error) || t('upload.failed', 'Could not upload the image.'));
     });
 
     request.addEventListener('error', function () {
       attachment.remove();
-      announce(editor, 'Не вдалося завантажити зображення — перевірте зʼєднання.');
+      announce(editor, t('upload.offline', 'Could not upload the image — check your connection.'));
     });
 
     request.addEventListener('timeout', function () {
       attachment.remove();
-      announce(editor, 'Завантаження триває надто довго. Спробуйте ще раз.');
+      announce(editor, t('upload.too_slow', 'The upload is taking too long. Try again.'));
     });
 
     // A navigation or an editor teardown mid-flight ends here; the attachment

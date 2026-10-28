@@ -92,7 +92,7 @@ final class ContentSeoInTheEditorTest extends TestCase
         $html = $this->render();
 
         self::assertStringContainsString('placeholder="Опис, написаний CMS."', $html);
-        self::assertStringContainsString('згенеровано', $html);
+        self::assertStringContainsString('>generated<', $html);
     }
 
     /**
@@ -129,7 +129,7 @@ final class ContentSeoInTheEditorTest extends TestCase
         $html = $this->render();
 
         self::assertStringContainsString('value="Мій заголовок"', $html);
-        self::assertStringContainsString('ваше', $html);
+        self::assertStringContainsString('yours', $html);
     }
 
     /**
@@ -152,8 +152,8 @@ final class ContentSeoInTheEditorTest extends TestCase
     {
         $html = $this->render();
 
-        self::assertStringContainsString('ще не згенеровано', $html);
-        self::assertStringContainsString('Для пошуку і соцмереж', $html);
+        self::assertStringContainsString('not generated yet', $html);
+        self::assertStringContainsString('For search and social media', $html);
     }
 
     /** Every offered field posts under the group the module never receives. */

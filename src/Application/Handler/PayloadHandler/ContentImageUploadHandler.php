@@ -15,6 +15,7 @@ use Semitexa\Core\Contract\TypedHandlerInterface;
 use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Core\Http\Response\ResourceResponse;
 use Semitexa\Media\Domain\Contract\MediaServiceInterface;
+use Semitexa\Cms\Application\Service\CmsText;
 
 /**
  * Takes an image the author dropped into the editor and gives back the URL the
@@ -43,7 +44,7 @@ final class ContentImageUploadHandler implements TypedHandlerInterface
 
         if ($file === null || !$file->isOk()) {
             return $this->json($resource, HttpStatus::BadRequest->value, [
-                'error' => $file?->errorMessage() ?? 'Не надіслано файл.',
+                'error' => $file?->errorMessage() ?? CmsText::t('image.no_file', [], 'No file was sent.'),
             ]);
         }
 
@@ -61,7 +62,7 @@ final class ContentImageUploadHandler implements TypedHandlerInterface
             return $this->json($resource, HttpStatus::UnprocessableEntity->value, ['error' => $e->getMessage()]);
         } catch (\Throwable) {
             return $this->json($resource, HttpStatus::InternalServerError->value, [
-                'error' => 'Не вдалося зберегти зображення.',
+                'error' => CmsText::t('image.save_failed', [], 'Could not save the image.'),
             ]);
         }
 

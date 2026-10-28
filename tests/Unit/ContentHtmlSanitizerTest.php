@@ -216,7 +216,7 @@ final class ContentHtmlSanitizerTest extends TestCase
 
         $notice = (string) $out->notice();
 
-        self::assertStringContainsString('2 шт.', $notice);
+        self::assertStringContainsString('2 of them', $notice);
         self::assertStringContainsString('https://evil.test/a.png', $notice);
         self::assertStringContainsString('https://other.test/b.png', $notice);
         self::assertStringContainsString('текст', $out->values['body'], 'the words were never the problem');
@@ -348,7 +348,7 @@ final class ContentHtmlSanitizerTest extends TestCase
     public function a_document_over_our_own_limit_is_refused_rather_than_trimmed(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/завелик/u');
+        $this->expectExceptionMessageMatches('/too large/u');
 
         $this->sanitizer->sanitize(str_repeat('a', 200_001));
     }
@@ -432,5 +432,16 @@ final class ContentHtmlSanitizerTest extends TestCase
         ]);
 
         return self::createWithDependencies(ContentHtmlSanitizer::class, ['sources' => $sources]);
+    }
+
+    /** A model's translation, an import and pasted markup write <p>: removed with its text. */
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function a_paragraph_is_kept_and_a_strays_text_survives_but_a_script_goes_whole(): void
+    {
+        $sanitizer = new \Semitexa\Cms\Application\Service\ContentHtmlSanitizer();
+
+        self::assertSame('<p>Привіт</p>', $sanitizer->sanitize('<p>Привіт</p>'));
+        self::assertSame('Title text', $sanitizer->sanitize('<h2>Title</h2><span> text</span>'));
+        self::assertSame('<p>Hi</p>', $sanitizer->sanitize('<p>Hi</p><script>steal()</script><style>a{}</style>'));
     }
 }

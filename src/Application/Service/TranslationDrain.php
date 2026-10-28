@@ -6,6 +6,8 @@ namespace Semitexa\Cms\Application\Service;
 
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Cms\Domain\Contract\ContentOverlayTranslatorInterface;
+use Semitexa\Cms\Domain\Model\TranslatedValue;
 
 /**
  * Runs the translations whose debounce window has closed.
@@ -21,6 +23,9 @@ final class TranslationDrain
 
     #[InjectAsReadonly]
     protected ContentSurfaceRegistry $surfaces;
+
+    #[InjectAsReadonly]
+    protected ContentHtmlSanitizer $sanitizer;
 
     /**
      * @return array{done: int, failed: int, gone: int}
@@ -62,7 +67,13 @@ final class TranslationDrain
             $this->queue->enqueue($task->getRef(), $task->getTranslatorId(), $hash, 0);
 
             try {
-                $translator->translate($task->getRef());
+                if ($translator instanceof ContentOverlayTranslatorInterface) {
+                    // What the model wrote is untrusted: sanitised here, where
+                    // the CMS sees it, not left to every translator to remember.
+                    $translator->storeTranslations($task->getRef(), $this->sanitizedTranslations($translator, $task->getRef()));
+                } else {
+                    $translator->translate($task->getRef());
+                }
                 $this->queue->settle($task->getRef(), $hash);
                 $done++;
             } catch (\Throwable $e) {
@@ -72,5 +83,14 @@ final class TranslationDrain
         }
 
         return ['done' => $done, 'failed' => $failed, 'gone' => $gone];
+    }
+
+    /** @return list<TranslatedValue> what the model wrote for $ref, its markup made safe */
+    private function sanitizedTranslations(ContentOverlayTranslatorInterface $translator, string $ref): array
+    {
+        return array_map(
+            fn (TranslatedValue $v): TranslatedValue => $v->html ? $v->withValue($this->sanitizer->sanitize($v->value)) : $v,
+            $translator->translations($ref),
+        );
     }
 }

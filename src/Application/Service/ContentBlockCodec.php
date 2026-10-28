@@ -60,6 +60,27 @@ final class ContentBlockCodec
         }
     }
 
+    /** A JSON object whose `format` is this codec's: a blocks document, readable or not. */
+    public function isMarkedDocument(string $value): bool
+    {
+        $trimmed = trim($value);
+        if (!str_contains($trimmed, self::MARKER) || !str_starts_with($trimmed, '{')) {
+            return false;
+        }
+        try {
+            $decoded = json_decode($trimmed, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            // A document cut short (a column too narrow, a half-written row)
+            // no longer parses but still opens with the declaration encode()
+            // writes first. Read as text, the save sanitised it and stored
+            // a different document over the original bytes. Only that opening
+            // counts: HTML that mentions the format does not start with it.
+            return preg_match('#^\{\s*"format"\s*:\s*"' . preg_quote(self::MARKER, '#') . '"#', $trimmed) === 1;
+        }
+
+        return is_array($decoded) && ($decoded['format'] ?? null) === self::MARKER;
+    }
+
     /** @return list<ContentBlock> */
     public function decode(string $value): array
     {
@@ -189,14 +210,20 @@ final class ContentBlockCodec
      */
     public function isUnreadableDocument(string $value): bool
     {
-        if (!str_contains($value, self::MARKER)) {
+        // A DOCUMENT, not a string that mentions the format: HTML carrying the
+        // marker text was taken for one, kept unsanitised by the save, and
+        // printed as markup on the public page.
+        if (!$this->isMarkedDocument($value)) {
             return false;
         }
 
         $blocks = $this->decode($value);
 
+        // decode() keeps the value as given, surrounding whitespace and all: a
+        // document with a trailing newline compared unequal to its trimmed
+        // self, was re-encoded as text, and lost its structure on save.
         return count($blocks) === 1
             && $blocks[0]->isText()
-            && $blocks[0]->payload === trim($value);
+            && in_array($blocks[0]->payload, [$value, trim($value)], true);
     }
 }

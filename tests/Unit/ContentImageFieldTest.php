@@ -70,7 +70,9 @@ final class ContentImageFieldTest extends TestCase
         $this->assertStringContainsString('/os/app/cms/media/a1b2c3', $html);
         // With an image present the author can replace it or take it off.
         $this->assertStringContainsString('cover__clear', $html);
-        $this->assertStringContainsString('Замінити', $html);
+        // The label in the button, not the JSON string map every page carries.
+        $this->assertStringContainsString('<span>Replace</span>', $html);
+        $this->assertStringNotContainsString('<span>Choose image</span>', $html);
     }
 
     #[Test]
@@ -81,7 +83,8 @@ final class ContentImageFieldTest extends TestCase
             'tok',
         );
 
-        $this->assertStringContainsString('Вибрати зображення', $html);
+        $this->assertStringContainsString('<span>Choose image</span>', $html);
+        $this->assertStringNotContainsString('<span>Replace</span>', $html);
         $this->assertStringContainsString('cover__clear" hidden', $html);
     }
 

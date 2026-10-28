@@ -40,6 +40,7 @@ final class SiteMapIntegrity
      * @param callable(string): bool $editorExists    does a module register this editor id
      * @param callable(string, string): bool $recordExists  does that editor load this ref
      * @param callable(string): bool $sourceExists    does anything list this collection source
+     * @param string|null $siteRef the map's site, which the projector writes whether or not the map yields it
      *
      * @return list<PlaceCheck>
      */
@@ -48,6 +49,7 @@ final class SiteMapIntegrity
         callable $editorExists,
         callable $recordExists,
         callable $sourceExists,
+        ?string $siteRef = null,
     ): array {
         /** @var list<Place> $all */
         $all = is_array($places) ? array_values($places) : iterator_to_array($places, false);
@@ -57,8 +59,11 @@ final class SiteMapIntegrity
         foreach ($all as $place) {
             $known[$place->ref] = true;
         }
+        if ($siteRef !== null && $siteRef !== '') {
+            $known[$siteRef] = true;
+        }
 
-        $reachable = self::reachableFromRoot($all);
+        $reachable = self::reachableFromRoot($all, $siteRef);
 
         $checks = [];
 
@@ -89,21 +94,32 @@ final class SiteMapIntegrity
      * places naming each other — both were reported Reachable while no visitor
      * could ever arrive.
      *
+     * A place with no parent hangs from the site: that is the edge
+     * {@see SiteMapProjector::project()} writes for it, so the console can walk
+     * to it. The check used to call it unreachable, and so did every place of a
+     * map that does not yield Place::site, which the projector writes anyway.
+     *
      * @param list<Place> $all
      * @return array<string, true>
      */
-    private static function reachableFromRoot(array $all): array
+    private static function reachableFromRoot(array $all, ?string $siteRef): array
     {
         $children = [];
-        $roots = [];
+        $roots = $siteRef !== null && $siteRef !== '' ? [$siteRef] : [];
 
         foreach ($all as $place) {
             if ($place->kind === NodeKind::Site) {
                 $roots[] = $place->ref;
+            }
+        }
+
+        $root = $roots[0] ?? null;
+        foreach ($all as $place) {
+            if ($place->kind === NodeKind::Site) {
                 continue;
             }
 
-            $children[(string) $place->parentRef][] = $place->ref;
+            $children[$place->parentRef ?? (string) $root][] = $place->ref;
         }
 
         $reachable = [];
