@@ -19,7 +19,7 @@
         "semitexa/scheduler": "*",
         "semitexa/os": ">=2026.09.10.0641 || dev-master",
         "semitexa/weave": "*",
-        "semitexa/ssr": ">=2026.09.27.0404 || dev-master",
+        "semitexa/ssr": ">=2026.10.29.1052 || dev-master",
         "semitexa/media": "*",
         "symfony/html-sanitizer": "^7.0"
     },
@@ -45,7 +45,7 @@
         "semitexa": {
             "floors": {
                 "semitexa/os": "2026.09.10.0641",
-                "semitexa/ssr": "next"
+                "semitexa/ssr": "2026.10.29.1052"
             }
         }
     },
