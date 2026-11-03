@@ -31,7 +31,7 @@ final class SiteMapProjectorTest extends TestCase
         $db = $this->orm->getAdapter();
         $db->execute(
             'CREATE TABLE weave_node (
-                id TEXT PRIMARY KEY, tenant_id TEXT, kind TEXT NOT NULL, title TEXT NOT NULL, title_key TEXT NOT NULL,
+                id TEXT PRIMARY KEY, tenant_id TEXT, kind TEXT NOT NULL, title TEXT NOT NULL, title_key TEXT NOT NULL, token_key TEXT,
                 ext_ref TEXT, properties_json TEXT NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )',
         );
